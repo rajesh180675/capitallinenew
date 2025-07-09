@@ -180,7 +180,6 @@ class ChartGenerator:
         for i, metric in enumerate(metrics):
             fig.add_trace(go.Scatter(x=df.columns, y=df.loc[metric], mode='lines+markers', name=metric,
                                      line={'color': colors[i % len(colors)], 'width': 3}))
-        # FIX: Explicitly set the category order to ensure correct plotting
         fig.update_xaxes(categoryorder='array', categoryarray=df.columns)
         return fig
 
@@ -192,7 +191,6 @@ class ChartGenerator:
         for i, metric in enumerate(metrics):
             fig.add_trace(go.Bar(x=df.columns, y=df.loc[metric], name=metric,
                                  marker_color=colors[i % len(colors)]))
-        # FIX: Explicitly set the category order to ensure correct plotting
         fig.update_xaxes(categoryorder='array', categoryarray=df.columns)
         return fig
 
@@ -204,7 +202,6 @@ class ChartGenerator:
             fig.add_trace(go.Scatter(x=df.columns, y=df.loc[metric], mode='lines', name=metric,
                                      fill='tonexty' if i > 0 else 'tozeroy',
                                      line={'color': colors[i % len(colors)]}))
-        # FIX: Explicitly set the category order to ensure correct plotting
         fig.update_xaxes(categoryorder='array', categoryarray=df.columns)
         return fig
 
@@ -231,12 +228,7 @@ class ChartGenerator:
 def parse_financial_file(uploaded_file: st.runtime.uploaded_file_manager.UploadedFile) -> Optional[Dict[str, Any]]:
     """
     Parses an uploaded Capitaline file, extracts data, and performs initial analysis.
-
-    Args:
-        uploaded_file: The file uploaded by the user via Streamlit.
-
-    Returns:
-        A dictionary containing the parsed data and metadata, or None on failure.
+    This version creates unique identifiers for metrics with duplicate names.
     """
     if uploaded_file is None:
         return None
@@ -248,28 +240,46 @@ def parse_financial_file(uploaded_file: st.runtime.uploaded_file_manager.Uploade
 
     try:
         content = uploaded_file.getvalue()
-        # Assume the main table is the first one found
         df = pd.read_html(io.BytesIO(content), header=[0, 1])[0]
 
         # --- Data Extraction and Cleaning ---
         company_name = "Unknown Company"
         try:
-            # Attempt to extract company name from a typical Capitaline header format
             header_str = str(df.columns[0][0])
             if ">>" in header_str:
                 company_name = header_str.split(">>")[2].split("(")[0].strip()
         except IndexError:
             logger.warning("Could not parse company name from header.")
 
-        # Flatten multi-index columns and set 'Metric' as the index
+        # Flatten multi-index columns and rename the first column to "Metric"
         df.columns = [str(col[1]) for col in df.columns]
-        df = df.rename(columns={df.columns[0]: "Metric"}).dropna(subset=["Metric"]).set_index("Metric")
+        df = df.rename(columns={df.columns[0]: "Metric"}).dropna(subset=["Metric"])
         
+        # --- FIX: Create a unique index to handle duplicate metric names ---
+        # Reset index to ensure it's a clean 0, 1, 2... sequence for referencing
+        df = df.reset_index(drop=True)
+        
+        # Find which 'Metric' names appear more than once
+        is_duplicate = df.duplicated(subset=['Metric'], keep=False)
+        
+        # Create a new column for the unique index. Default to the original name.
+        df['unique_metric_id'] = df['Metric']
+        
+        # For the duplicated rows, append the row number to make the name unique
+        # e.g., "Other Income" at row 23 becomes "Other Income (row 24)"
+        df.loc[is_duplicate, 'unique_metric_id'] = df['Metric'] + ' (row ' + (df.index + 1).astype(str) + ')'
+        
+        # Set this new unique column as the DataFrame's index
+        df = df.set_index('unique_metric_id')
+        # We can now drop the original 'Metric' column as it's redundant
+        df = df.drop(columns=['Metric'])
+        # --- End of fix ---
+
         # Identify and rename year columns using regex for robustness
         year_cols_map = {col: YEAR_REGEX.search(col).group(0) for col in df.columns if YEAR_REGEX.search(col)}
         df = df.rename(columns=year_cols_map)
 
-        # --- FIX: Sort years as integers to ensure correct chronological order ---
+        # Sort years as integers to ensure correct chronological order
         year_columns = sorted([col for col in df.columns if col.isdigit()], key=int)
         if not year_columns:
             st.error("No valid year columns (e.g., '2023', '2022') were found in the file.")
