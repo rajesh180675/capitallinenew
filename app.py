@@ -1,4 +1,4 @@
-,"""
+"""
 Enhanced Financial Dashboard - Improved Version
 A robust Streamlit application for financial data analysis with enhanced error handling,
 performance optimization, and additional features.
