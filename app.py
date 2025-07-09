@@ -263,8 +263,8 @@ def parse_financial_file(uploaded_file: st.runtime.uploaded_file_manager.Uploade
         year_cols_map = {col: YEAR_REGEX.search(col).group(0) for col in df.columns if YEAR_REGEX.search(col)}
         df = df.rename(columns=year_cols_map)
 
-        # Filter for valid, chronological year columns
-        year_columns = sorted([col for col in df.columns if col.isdigit()], reverse=True)
+        # --- FIX: Sort years in ascending order for correct chart display ---
+        year_columns = sorted([col for col in df.columns if col.isdigit()]) # CORRECTED LINE
         if not year_columns:
             st.error("No valid year columns (e.g., '2023', '2022') were found in the file.")
             return None
