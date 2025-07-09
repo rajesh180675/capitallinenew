@@ -169,7 +169,6 @@ class PenmanNissimAnalyzer:
         noa = operating_assets - operating_liabilities
         nfo = financial_liabilities - financial_assets
         
-        # Manual handling of NaNs for np.allclose compatibility with older NumPy versions
         check_series = noa - nfo
         valid_mask = np.isfinite(check_series) & np.isfinite(equity)
         validation_check = np.allclose(check_series[valid_mask], equity[valid_mask])
@@ -239,7 +238,7 @@ class DashboardApp:
         self.chart_builders = {"Line": ChartGenerator.create_line_chart, "Bar": ChartGenerator.create_bar_chart}
 
     def _initialize_state(self):
-        defaults = {"analysis_data": None, "metric_mapping": {}, "pn_results": None}
+        defaults = {"analysis_data": None, "metric_mapping": {}, "pn_results": None, "pn_mappings": {}}
         for k, v in defaults.items():
             if k not in st.session_state: st.session_state[k] = v
 
@@ -264,6 +263,8 @@ class DashboardApp:
         st.session_state.analysis_data = self.process_and_merge_files(files)
         st.session_state.metric_mapping = {}
         st.session_state.pn_results = None
+        st.session_state.pn_mappings = {}
+
 
     def run(self):
         self.render_sidebar()
@@ -322,33 +323,54 @@ class DashboardApp:
 
     def _render_penman_nissim_tab(self, df: pd.DataFrame):
         st.header("🔍 Penman-Nissim Reformulation Analysis")
-        st.info("This analysis separates operating and financing activities to reveal a company's core operational profitability (RNOA).")
-        
+        st.info("This analysis separates operating and financing activities to reveal a company's core operational profitability (RNOA). It provides a clearer view than traditional accounting metrics.")
+
         available_metrics = df.index.tolist()
-        pn_mappings = {}
 
         with st.expander("Configure Penman-Nissim Metrics", expanded=True):
-            st.markdown("##### Balance Sheet Items")
-            c1, c2 = st.columns(2)
-            pn_mappings['Financial Assets'] = c1.multiselect("Select Financial Assets", available_metrics, help="e.g., Cash, Marketable Securities")
-            pn_mappings['Financial Liabilities'] = c2.multiselect("Select Financial Liabilities", available_metrics, help="e.g., Short-term Debt, Long-term Debt")
             
-            st.markdown("##### Core Statement Items")
-            c1, c2, c3, c4, c5 = st.columns(5)
-            def get_idx(m): return available_metrics.index(m) + 1 if m in available_metrics else 0
-            pn_mappings['Total Assets'] = c1.selectbox("Total Assets", [''] + available_metrics, index=get_idx('Total Assets'), key='pn_ta')
-            pn_mappings['Total Liabilities'] = c2.selectbox("Total Liabilities", [''] + available_metrics, index=get_idx('Total Liabilities'), key='pn_tl')
-            pn_mappings['Total Equity'] = c3.selectbox("Total Equity", [''] + available_metrics, index=get_idx('Total Equity'), key='pn_te')
-            pn_mappings['Revenue'] = c4.selectbox("Revenue", [''] + available_metrics, index=get_idx('Revenue'), key='pn_rev')
-            pn_mappings['Net Income'] = c5.selectbox("Net Income", [''] + available_metrics, index=get_idx('Net Income'), key='pn_ni')
+            financial_asset_keywords = ['cash', 'bank', 'investments', 'marketable securities', 'loan to']
+            financial_liability_keywords = ['debt', 'borrowings', 'loan from', 'notes payable', 'bonds']
 
-            st.markdown("##### Income and Expense Proxies")
-            c1, c2 = st.columns(2)
-            pn_mappings['Operating Income'] = c1.selectbox("Operating Income (Proxy)", [''] + available_metrics, help="EBIT is a common proxy.", index=get_idx('EBIT'), key='pn_oi')
-            pn_mappings['Net Financial Expense'] = c2.selectbox("Net Financial Expense (Proxy)", [''] + available_metrics, help="Interest Expense is a common proxy.", index=get_idx('Interest Expense'), key='pn_nfe')
+            default_fin_assets = [m for m in available_metrics if any(key in m.lower() for key in financial_asset_keywords)]
+            default_fin_liabilities = [m for m in available_metrics if any(key in m.lower() for key in financial_liability_keywords)]
+            
+            st.session_state.pn_mappings['Financial Assets'] = st.multiselect(
+                "1. Select Financial Assets", available_metrics,
+                default=st.session_state.pn_mappings.get('Financial Assets', default_fin_assets),
+                help="Assets held for investment/financing purposes, not core operations. (e.g., 'Cash', 'Marketable Securities', 'Long-term Investments')"
+            )
+            
+            st.session_state.pn_mappings['Financial Liabilities'] = st.multiselect(
+                "2. Select Financial Liabilities", available_metrics,
+                default=st.session_state.pn_mappings.get('Financial Liabilities', default_fin_liabilities),
+                help="Interest-bearing debt used to finance the company. (e.g., 'Short-term Debt', 'Bonds Payable', 'Long-term Borrowings')"
+            )
 
+            st.markdown("---")
+            st.markdown("##### 3. Confirm Core Statement Items")
+
+            def get_idx(m_name, default_val=''):
+                val_in_state = st.session_state.pn_mappings.get(m_name)
+                if val_in_state and val_in_state in available_metrics: return available_metrics.index(val_in_state) + 1
+                if default_val and default_val in available_metrics: return available_metrics.index(default_val) + 1
+                return 0
+
+            c1, c2, c3 = st.columns(3)
+            st.session_state.pn_mappings['Total Assets'] = c1.selectbox("Total Assets", [''] + available_metrics, index=get_idx('Total Assets', 'Total Assets'), key='pn_ta')
+            st.session_state.pn_mappings['Total Liabilities'] = c2.selectbox("Total Liabilities", [''] + available_metrics, index=get_idx('Total Liabilities', 'Total Liabilities'), key='pn_tl')
+            st.session_state.pn_mappings['Total Equity'] = c3.selectbox("Total Equity", [''] + available_metrics, index=get_idx('Total Equity', 'Total Equity'), key='pn_te')
+
+            c4, c5, c6 = st.columns(3)
+            st.session_state.pn_mappings['Revenue'] = c4.selectbox("Revenue", [''] + available_metrics, index=get_idx('Revenue', 'Revenue'), key='pn_rev')
+            st.session_state.pn_mappings['Operating Income'] = c5.selectbox("Operating Income (Proxy)", [''] + available_metrics, help="Use EBIT or a similar pre-tax, pre-interest metric.", index=get_idx('Operating Income', 'EBIT'), key='pn_oi')
+            st.session_state.pn_mappings['Net Income'] = c6.selectbox("Net Income", [''] + available_metrics, index=get_idx('Net Income', 'Net Profit'), key='pn_ni')
+            
+            st.session_state.pn_mappings['Net Financial Expense'] = st.selectbox("Net Financial Expense (Proxy)", [''] + available_metrics, help="Use Interest Expense or a similar metric representing the cost of debt.", index=get_idx('Net Financial Expense', 'Interest Expense'), key='pn_nfe')
+            
+            st.markdown("")
             if st.button("🚀 Run Penman-Nissim Analysis"):
-                analyzer = PenmanNissimAnalyzer(df, pn_mappings)
+                analyzer = PenmanNissimAnalyzer(df, st.session_state.pn_mappings)
                 st.session_state.pn_results = analyzer.calculate_all()
         
         st.markdown("---")
