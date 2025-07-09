@@ -1,6 +1,6 @@
 # Enhanced Financial Dashboard - Complete Integrated Version
 # A robust Streamlit application for financial data analysis with enhanced error handling,
-# performance optimization, and advanced analytical features.
+# performance optimization, and advanced analytical features including multi-file support.
 
 # --- 1. Imports and Setup ---
 import io
@@ -89,19 +89,6 @@ class DataProcessor:
         return df
 
     @staticmethod
-    def detect_outliers(df: pd.DataFrame) -> Dict[str, List[int]]:
-        outliers = {}
-        numeric_df = df.select_dtypes(include=np.number)
-        for col in numeric_df.columns:
-            Q1, Q3 = numeric_df[col].quantile(0.25), numeric_df[col].quantile(0.75)
-            IQR = Q3 - Q1
-            if IQR > 0:
-                lower, upper = Q1 - 1.5 * IQR, Q3 + 1.5 * IQR
-                outlier_indices = numeric_df[(numeric_df[col] < lower) | (numeric_df[col] > upper)].index.tolist()
-                if outlier_indices: outliers[col] = outlier_indices
-        return outliers
-
-    @staticmethod
     def calculate_data_quality(df: pd.DataFrame) -> DataQualityMetrics:
         total = df.size
         if total == 0: return DataQualityMetrics(0, 0, 0.0, 0)
@@ -119,7 +106,7 @@ class DataProcessor:
                 df_scaled.loc[metric] = np.nan
         return df_scaled
 
-class ChartGenerator:
+class ChartGenerator: # (No changes needed in this class)
     @staticmethod
     def _create_base_figure(title, theme, show_grid, yaxis_title):
         fig = go.Figure()
@@ -150,14 +137,13 @@ class ChartGenerator:
         return go.Figure(data=go.Heatmap(z=corr.values, x=corr.columns, y=corr.columns, colorscale='RdBu_r', zmid=0)).update_layout(title={'text': title, 'x': 0.5}, template=theme)
 
 # --- 5. Advanced Financial Analysis Modules ---
+# (No changes needed in these classes)
 class FinancialRatioCalculator:
     @staticmethod
     def calculate_all_ratios(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         ratios = {}
-        # Helper to safely get series
         def get(name): return df.loc[name] if name in df.index else None
         
-        # Profitability
         profit_ratios = pd.DataFrame(index=df.columns)
         if (rev := get('Revenue')) is not None:
             if (gp := get('Gross Profit')) is not None: profit_ratios['Gross Margin %'] = (gp / rev) * 100
@@ -170,7 +156,6 @@ class FinancialRatioCalculator:
             profit_ratios['ROCE %'] = (ebit / (ta - cl)) * 100
         if not profit_ratios.empty: ratios['Profitability'] = profit_ratios.T.dropna(how='all')
 
-        # Liquidity
         liq_ratios = pd.DataFrame(index=df.columns)
         if (ca := get('Current Assets')) is not None and (cl := get('Current Liabilities')) is not None:
             liq_ratios['Current Ratio'] = ca / cl
@@ -179,7 +164,6 @@ class FinancialRatioCalculator:
             liq_ratios['Cash Ratio'] = cash / cl
         if not liq_ratios.empty: ratios['Liquidity'] = liq_ratios.T.dropna(how='all')
 
-        # Leverage
         lev_ratios = pd.DataFrame(index=df.columns)
         if (debt := get('Total Debt')) is not None:
             if (eq := get('Total Equity')) is not None: lev_ratios['Debt to Equity'] = debt / eq
@@ -247,8 +231,10 @@ class CashFlowAnalyzer:
         return metrics.T
 
 # --- 6. Core Application Logic ---
-@st.cache_data(show_spinner="Parsing and analyzing your file...")
-def parse_financial_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
+
+# This helper function now just parses a single file and is NOT cached.
+def parse_single_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
+    """Parses a single financial data file and returns a dictionary with the dataframe and metadata."""
     if not FileValidator.validate_file(uploaded_file)[0]: return None
     try:
         df = pd.read_html(io.BytesIO(uploaded_file.getvalue()), header=[0, 1])[0]
@@ -256,20 +242,27 @@ def parse_financial_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]
         try:
             if ">>" in str(df.columns[0][0]): company_name = str(df.columns[0][0]).split(">>")[2].split("(")[0].strip()
         except IndexError: pass
+        
         df.columns = [str(c[1]) for c in df.columns]
         df = df.rename(columns={df.columns[0]: "Metric"}).dropna(subset=["Metric"]).reset_index(drop=True)
-        df['unique_metric_id'] = df['Metric'] + df.groupby('Metric').cumcount().astype(str).replace('0', '')
-        df.loc[df.groupby('Metric').transform('count')['unique_metric_id'] > 1, 'unique_metric_id'] = df['Metric'] + ' (row ' + (df.index + 2).astype(str) + ')'
+        
+        # Improved unique metric ID generation
+        is_duplicate = df.duplicated(subset=['Metric'], keep=False)
+        df['unique_metric_id'] = df['Metric']
+        df.loc[is_duplicate, 'unique_metric_id'] = df['Metric'] + ' (row ' + (df.index + 2).astype(str) + ')'
         df = df.set_index('unique_metric_id').drop(columns=['Metric'])
+
         year_cols = {c: YEAR_REGEX.search(c).group(0) for c in df.columns if YEAR_REGEX.search(c)}
         df = df.rename(columns=year_cols)
         valid_years = sorted([c for c in df.columns if c.isdigit()], key=int)
-        if not valid_years: st.error("No valid year columns found."); return None
+        
+        if not valid_years: return None
+        
         df_proc = DataProcessor.clean_numeric_data(df[valid_years].copy()).dropna(how='all')
-        return {"statement": df_proc, "company_name": company_name, "data_quality": DataProcessor.calculate_data_quality(df_proc)}
+        return {"statement": df_proc, "company_name": company_name}
     except Exception as e:
-        logger.error(f"Error parsing file: {e}", exc_info=True)
-        st.error(f"Error parsing file. Check format. Details: {e}")
+        logger.error(f"Error parsing file '{uploaded_file.name}': {e}")
+        st.warning(f"Could not parse '{uploaded_file.name}'. It might be in an unsupported format.")
         return None
 
 class DashboardApp:
@@ -278,9 +271,54 @@ class DashboardApp:
         self.chart_builders = {"Line": ChartGenerator.create_line_chart, "Bar": ChartGenerator.create_bar_chart, "Heatmap": ChartGenerator.create_heatmap}
 
     def _initialize_state(self):
-        defaults = {"analysis_data": None, "uploaded_file_id": None, "metric_mapping": {}}
+        defaults = {"analysis_data": None, "metric_mapping": {}}
         for k, v in defaults.items():
             if k not in st.session_state: st.session_state[k] = v
+
+    @st.cache_data(show_spinner="Processing and merging files...")
+    def process_and_merge_files(_self, uploaded_files: List[UploadedFile]) -> Optional[Dict[str, Any]]:
+        """Processes a list of uploaded files, merges them, and returns a single analysis dictionary."""
+        if not uploaded_files:
+            return None
+
+        all_dfs = []
+        company_name = "Multiple Sources"
+        first_company_name_found = False
+
+        for file in uploaded_files:
+            parsed_data = parse_single_file(file)
+            if parsed_data:
+                all_dfs.append(parsed_data["statement"])
+                if not first_company_name_found and parsed_data["company_name"] != "Unknown Company":
+                    company_name = parsed_data["company_name"]
+                    first_company_name_found = True
+
+        if not all_dfs:
+            st.error("None of the uploaded files could be parsed. Please check the file formats.")
+            return None
+
+        # Merge dataframes, combining columns for the same year and stacking rows
+        merged_df = pd.concat(all_dfs, axis=0)
+        
+        # Handle metrics that appear in multiple files by keeping the first one.
+        merged_df = merged_df[~merged_df.index.duplicated(keep='first')]
+        
+        # Ensure year columns are sorted
+        year_cols = sorted([col for col in merged_df.columns if col.isdigit()], key=int)
+        merged_df = merged_df[year_cols]
+
+        return {
+            "statement": merged_df,
+            "company_name": company_name,
+            "data_quality": DataProcessor.calculate_data_quality(merged_df)
+        }
+
+    def _handle_file_upload(self):
+        """Callback function to process files when the uploader changes."""
+        uploaded_files = st.session_state.get("file_uploader_key", [])
+        st.session_state.analysis_data = self.process_and_merge_files(uploaded_files)
+        # Reset mapping whenever files are changed
+        st.session_state.metric_mapping = {}
 
     def run(self):
         self.render_sidebar()
@@ -288,11 +326,15 @@ class DashboardApp:
 
     def render_sidebar(self):
         st.sidebar.title("📂 Upload & Options")
-        uploaded_file = st.sidebar.file_uploader("Upload Financials (HTML/XLSX)", type=ALLOWED_FILE_TYPES)
-        if uploaded_file and uploaded_file.file_id != st.session_state.uploaded_file_id:
-            st.session_state.uploaded_file_id = uploaded_file.file_id
-            st.session_state.analysis_data = parse_financial_file(uploaded_file)
-            st.session_state.metric_mapping = {} # Reset mapping on new file
+        st.sidebar.info("Upload one or more financial statements (e.g., Income, Balance Sheet). They will be automatically merged.")
+        
+        st.sidebar.file_uploader(
+            "Upload Financials (HTML/XLSX)",
+            type=ALLOWED_FILE_TYPES,
+            accept_multiple_files=True,
+            key="file_uploader_key",
+            on_change=self._handle_file_upload
+        )
         
         st.sidebar.title("⚙️ Display Settings")
         st.sidebar.checkbox("Show Data Quality", key="show_data_quality", value=True)
@@ -302,29 +344,29 @@ class DashboardApp:
 
     def _render_metric_mapper(self):
         with st.sidebar.expander("📊 Metric Mapping for Analysis", expanded=False):
-            st.info("Map your file's metrics to standard names for advanced analysis.")
+            st.info("Map metrics from your files to standard names for advanced analysis.")
             all_req_metrics = sorted(list(set(m for v in REQUIRED_METRICS.values() for m in v)))
             available_metrics = st.session_state.analysis_data["statement"].index.tolist()
             
-            # Pre-populate mapping with exact matches
             current_mapping = st.session_state.metric_mapping.copy()
             for std_metric in all_req_metrics:
                 if std_metric not in current_mapping and std_metric in available_metrics:
                     current_mapping[std_metric] = std_metric
 
-            # Create UI for mapping
             for std_metric in all_req_metrics:
                 st.session_state.metric_mapping[std_metric] = st.selectbox(
-                    f"Standard: **{std_metric}**",
+                    f"**{std_metric}**",
                     options=[''] + available_metrics,
                     index= (available_metrics.index(current_mapping[std_metric]) + 1) if std_metric in current_mapping and current_mapping[std_metric] in available_metrics else 0,
                     key=f"map_{std_metric}"
                 )
+    
+    # --- Main Panel Rendering (no major changes, they adapt to the new data structure) ---
 
     def render_main_panel(self):
         st.markdown("<div class='main-header'>💹 Advanced Financial Dashboard</div>", unsafe_allow_html=True)
         if not st.session_state.analysis_data:
-            st.info("👋 Welcome! Please upload a financial data file to begin analysis.")
+            st.info("👋 Welcome! Please upload one or more financial data files to begin.")
             return
 
         data, df = st.session_state.analysis_data, st.session_state.analysis_data["statement"]
@@ -332,17 +374,16 @@ class DashboardApp:
         if st.session_state.show_data_quality:
             dq = data["data_quality"]
             qc = f"quality-{dq.quality_score.lower()}"
-            st.markdown(f"""<div class="feature-card"><h4><span class="data-quality-indicator {qc}"></span>Data Quality: {dq.quality_score}</h4>
-            Total Rows: {dq.total_rows} | Missing Values: {dq.missing_values} ({dq.missing_percentage:.2f}%)</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="feature-card"><h4><span class="data-quality-indicator {qc}"></span>Merged Data Quality: {dq.quality_score}</h4>
+            Total Unique Rows: {dq.total_rows} | Total Missing Values: {dq.missing_values} ({dq.missing_percentage:.2f}%)</div>""", unsafe_allow_html=True)
 
-        tabs = ["📊 Visualizations", "📄 Data Table", "💡 Advanced Analysis"]
+        tabs = ["📊 Visualizations", "📄 Merged Data Table", "💡 Advanced Analysis"]
         tab_viz, tab_data, tab_adv = st.tabs(tabs)
         with tab_viz: self._render_visualization_tab(df)
         with tab_data: self._render_data_table_tab(df)
         with tab_adv: self._render_advanced_analysis_tab(df)
 
     def _get_mapped_df(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
-        """Creates a DataFrame with standardized index names based on user mapping."""
         mapping = {v: k for k, v in st.session_state.metric_mapping.items() if v}
         if not mapping:
             st.warning("Please map metrics in the sidebar to run advanced analysis.")
@@ -367,7 +408,7 @@ class DashboardApp:
         
         with st.expander("🌱 Growth Analysis", expanded=False):
             st.subheader("Compound Annual Growth Rate (CAGR)")
-            cagr_metrics = st.multiselect("Select metrics for CAGR:", mapped_df.index.tolist(), default=['Revenue', 'Net Profit'] if all(m in mapped_df.index for m in ['Revenue', 'Net Profit']) else None)
+            cagr_metrics = st.multiselect("Select metrics for CAGR:", mapped_df.index.tolist(), default=['Revenue', 'Net Profit'] if all(m in mapped_df.index for m in ['Revenue', 'Net Profit']) else None, key="cagr_ms")
             if cagr_metrics:
                 cagr_results = GrowthAnalyzer.calculate_cagr(mapped_df, cagr_metrics)
                 if not cagr_results.empty:
@@ -378,7 +419,7 @@ class DashboardApp:
         with st.expander("🔮 Trend Analysis & Forecasting", expanded=False):
             st.subheader("Metric Forecasting")
             col1, col2 = st.columns([3,1])
-            forecast_metrics = col1.multiselect("Select metrics to forecast:", mapped_df.index.tolist(), default=['Revenue'] if 'Revenue' in mapped_df.index else None)
+            forecast_metrics = col1.multiselect("Select metrics to forecast:", mapped_df.index.tolist(), default=['Revenue'] if 'Revenue' in mapped_df.index else None, key="forecast_ms")
             periods = col2.number_input("Forecast Periods (Years)", min_value=1, max_value=5, value=2)
             if forecast_metrics:
                 forecasts, stats = TrendAnalyzer.forecast_metrics(mapped_df, forecast_metrics, periods)
@@ -412,7 +453,7 @@ class DashboardApp:
         scale = col4.selectbox("Y-Axis Scale:", ["Linear", "Logarithmic", "Normalized (Base 100)"], disabled=(chart == 'Heatmap'))
 
         plot_df, y_title = df, "Amount (₹ Cr.)"
-        if scale == "Normalized (Base 100)":
+        if scale == "Normalized (Base 100)" and metrics:
             plot_df = DataProcessor.normalize_to_100(df, metrics)
             y_title = "Normalized Value (Base 100)"
 
@@ -423,6 +464,7 @@ class DashboardApp:
             st.warning("Please select at least one metric.")
 
     def _render_data_table_tab(self, df: pd.DataFrame):
+        st.subheader("Merged and Cleaned Financial Data")
         st.dataframe(df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
 
 # --- 7. App Execution ---
