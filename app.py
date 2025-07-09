@@ -340,16 +340,28 @@ class DashboardApp:
             return
 
         data = st.session_state.analysis_data
+        df = data["statement"]
+        
         st.subheader(f"Company Analysis: {data['company_name']}")
 
         # --- Display Data Quality and Outlier Information ---
         self._display_metadata(data)
 
-        # --- Charting Controls and Display ---
-        df = data["statement"]
+        # --- Create tabs for visualizations and data table ---
+        tab_viz, tab_data = st.tabs(["📊 Visualizations", "📄 Data Table"])
+
+        with tab_viz:
+            self._render_visualization_tab(df)
+            
+        with tab_data:
+            self._render_data_table_tab(df)
+
+    def _render_visualization_tab(self, df: pd.DataFrame):
+        """Renders the content for the visualization tab."""
+        st.header("Financial Charts")
+        
         available_metrics = df.index.tolist()
         
-        # Use columns for a cleaner layout
         col1, col2, col3 = st.columns([3, 2, 2])
         with col1:
             selected_metrics = st.multiselect(
@@ -368,7 +380,6 @@ class DashboardApp:
             st.warning("Please select at least one metric to generate a chart.")
             return
 
-        # Dynamically build and display the selected chart
         chart_builder = self.CHART_BUILDERS[chart_type]
         fig = chart_builder(
             df=df,
@@ -380,6 +391,16 @@ class DashboardApp:
         
         if fig:
             st.plotly_chart(fig, use_container_width=True)
+            
+    def _render_data_table_tab(self, df: pd.DataFrame):
+        """Renders the content for the data table tab."""
+        st.header("Financial Data")
+        st.info("This table shows the cleaned financial data used for the visualizations.")
+        
+        # Format the dataframe for better readability
+        formatted_df = df.style.format("{:,.2f}", na_rep="-")
+        
+        st.dataframe(formatted_df, use_container_width=True)
 
     def _display_metadata(self, data: Dict[str, Any]):
         """Displays the data quality and outlier cards if toggled."""
