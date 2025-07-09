@@ -14,4 +14,4 @@ openpyxl
 xlsxwriter
 scipy
 kaleido
-sklearn
+scikit-learn
