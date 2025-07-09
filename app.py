@@ -180,6 +180,8 @@ class ChartGenerator:
         for i, metric in enumerate(metrics):
             fig.add_trace(go.Scatter(x=df.columns, y=df.loc[metric], mode='lines+markers', name=metric,
                                      line={'color': colors[i % len(colors)], 'width': 3}))
+        # FIX: Explicitly set the category order to ensure correct plotting
+        fig.update_xaxes(categoryorder='array', categoryarray=df.columns)
         return fig
 
     @staticmethod
@@ -190,6 +192,8 @@ class ChartGenerator:
         for i, metric in enumerate(metrics):
             fig.add_trace(go.Bar(x=df.columns, y=df.loc[metric], name=metric,
                                  marker_color=colors[i % len(colors)]))
+        # FIX: Explicitly set the category order to ensure correct plotting
+        fig.update_xaxes(categoryorder='array', categoryarray=df.columns)
         return fig
 
     @staticmethod
@@ -200,6 +204,8 @@ class ChartGenerator:
             fig.add_trace(go.Scatter(x=df.columns, y=df.loc[metric], mode='lines', name=metric,
                                      fill='tonexty' if i > 0 else 'tozeroy',
                                      line={'color': colors[i % len(colors)]}))
+        # FIX: Explicitly set the category order to ensure correct plotting
+        fig.update_xaxes(categoryorder='array', categoryarray=df.columns)
         return fig
 
     @staticmethod
@@ -263,12 +269,13 @@ def parse_financial_file(uploaded_file: st.runtime.uploaded_file_manager.Uploade
         year_cols_map = {col: YEAR_REGEX.search(col).group(0) for col in df.columns if YEAR_REGEX.search(col)}
         df = df.rename(columns=year_cols_map)
 
-        # --- FIX: Sort years in ascending order for correct chart display ---
-        year_columns = sorted([col for col in df.columns if col.isdigit()]) # CORRECTED LINE
+        # --- FIX: Sort years as integers to ensure correct chronological order ---
+        year_columns = sorted([col for col in df.columns if col.isdigit()], key=int)
         if not year_columns:
             st.error("No valid year columns (e.g., '2023', '2022') were found in the file.")
             return None
 
+        # Reorder the DataFrame based on the correctly sorted years
         df_processed = df[year_columns].copy()
         df_processed = DataProcessor.clean_numeric_data(df_processed).dropna(how='all')
 
