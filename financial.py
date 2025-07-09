@@ -24,9 +24,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE_MB = 10
+### CHANGE: Added 'csv' to the allowed types
 ALLOWED_FILE_TYPES = ['html', 'htm', 'xls', 'xlsx', 'csv']
 YEAR_REGEX = re.compile(r'\b(19[8-9]\d|20\d\d)\b')
 
+# ... (rest of configuration is unchanged) ...
 REQUIRED_METRICS = {
     'Profitability': ['Revenue', 'Gross Profit', 'EBIT', 'Net Profit', 'Total Equity', 'Total Assets', 'Current Liabilities'],
     'Liquidity': ['Current Assets', 'Current Liabilities', 'Inventory', 'Cash and Cash Equivalents'],
@@ -36,6 +38,7 @@ REQUIRED_METRICS = {
 }
 
 # --- 3. Page and Style Configuration ---
+# ... (unchanged) ...
 st.set_page_config(page_title="Advanced Financial Dashboard", page_icon="💹", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
 <style>
@@ -50,6 +53,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 4. Data Structures and Basic Classes ---
+# ... (unchanged) ...
 @dataclass
 class DataQualityMetrics:
     total_rows: int; missing_values: int; missing_percentage: float; duplicate_rows: int
@@ -58,7 +62,6 @@ class DataQualityMetrics:
         if self.missing_percentage < 5: self.quality_score = "High"
         elif self.missing_percentage < 20: self.quality_score = "Medium"
         else: self.quality_score = "Low"
-
 class DataProcessor:
     @staticmethod
     def clean_numeric_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -83,7 +86,6 @@ class DataProcessor:
             else:
                 df_scaled.loc[metric] = np.nan
         return df_scaled
-
 class ChartGenerator:
     @staticmethod
     def _create_base_figure(title, theme, show_grid, yaxis_title):
@@ -105,6 +107,7 @@ class ChartGenerator:
         return fig
 
 # --- 5. Advanced Financial Analysis Modules ---
+# ... (unchanged) ...
 class FinancialRatioCalculator:
     @staticmethod
     def calculate_all_ratios(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
@@ -130,7 +133,6 @@ class FinancialRatioCalculator:
                 lev_ratios['Interest Coverage'] = ebit / ie
         if not lev_ratios.empty: ratios['Leverage'] = lev_ratios.T.dropna(how='all')
         return ratios
-
 class PenmanNissimAnalyzer:
     def __init__(self, df: pd.DataFrame, mappings: Dict[str, Any]):
         self.df = df
@@ -147,63 +149,100 @@ class PenmanNissimAnalyzer:
         financial_assets, financial_liabilities = self._get_multi('Financial Assets'), self._get_multi('Financial Liabilities')
         operating_assets, operating_liabilities = total_assets - financial_assets, total_liabilities - financial_liabilities
         noa, nfo = operating_assets - operating_liabilities, financial_liabilities - financial_assets
-        check_series, valid_mask = noa - nfo, np.isfinite(noa - nfo) & np.isfinite(equity)
+        check_series = noa - nfo
+        valid_mask = np.isfinite(check_series) & np.isfinite(equity)
         validation_check = np.allclose(check_series[valid_mask], equity[valid_mask])
-        reformulated_bs = pd.DataFrame({'Operating Assets (OA)': operating_assets, 'Financial Assets (FA)': financial_assets, 'Operating Liabilities (OL)': operating_liabilities, 'Financial Liabilities (FL)': financial_liabilities, 'Net Operating Assets (NOA)': noa, 'Net Financial Obligations (NFO)': nfo, 'Total Equity': equity, 'Check (NOA-NFO-Equity)': check_series - equity}).T
+        reformulated_bs = pd.DataFrame({'Operating Assets (OA)': operating_assets, 'Financial Assets (FA)': financial_assets, 'Operating Liabilities (OL)': operating_liabilities, 'Financial Liabilities (FL)': financial_liabilities, 'Net Operating Assets (NOA)': noa, 'Net Financial Obligations (NFO)': nfo, 'Total Equity': equity, 'Check (NOA-NFO-Equity)': noa - nfo - equity}).T
         oi, sales, nfe = self._get('Operating Income'), self._get('Revenue'), self._get('Net Financial Expense')
         avg_noa, avg_nfo, avg_equity = (noa + noa.shift(1)) / 2, (nfo + nfo.shift(1)) / 2, (equity + equity.shift(1)) / 2
         rnoa, opm, noat = (oi / avg_noa.replace(0, np.nan)) * 100, (oi / sales.replace(0, np.nan)) * 100, sales / avg_noa.replace(0, np.nan)
         ratios = pd.DataFrame({'Return on Net Operating Assets (RNOA) %': rnoa, 'Operating Profit Margin (OPM) %': opm, 'Net Operating Asset Turnover (NOAT)': noat}).T
-        
-        nan_series = pd.Series(np.nan, index=self.df.columns)
-        nbc, flev, spread = nan_series.copy(), nan_series.copy(), nan_series.copy()
-        try:
-            if not avg_nfo.replace(0, np.nan).isnull().all(): nbc = (nfe / avg_nfo.replace(0, np.nan)) * 100
-            if not avg_equity.replace(0, np.nan).isnull().all(): flev = avg_nfo / avg_equity.replace(0, np.nan)
-            spread = rnoa - nbc
-        except Exception as e:
-            logger.warning(f"Could not calculate full ROE decomposition: {e}")
-            
+        nbc, flev, spread = (nfe / avg_nfo.replace(0, np.nan)) * 100, avg_nfo / avg_equity.replace(0, np.nan), rnoa - nbc
         roe_decomposed = pd.DataFrame({'RNOA %': rnoa, 'Financial Leverage (FLEV)': flev, 'Spread (RNOA - NBC) %': spread, 'Financing Contribution (FLEV * Spread)': flev * (spread / 100), 'ROE (from P-N) %': rnoa + (flev * spread), 'ROE (from statements) %': (self._get('Net Income') / avg_equity.replace(0, np.nan)) * 100}).T
-        
         return {"reformulated_bs": reformulated_bs.dropna(how='all', axis=1), "ratios": ratios.dropna(how='all', axis=1), "roe_decomposition": roe_decomposed.dropna(how='all', axis=1), "validation_ok": validation_check}
 
 # --- 6. Core Application Logic ---
+
+### CHANGE: New function to handle HTML/XLS parsing
 def parse_html_xls_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
+    """Parses a single HTML or XLS file with multi-level headers."""
     try:
-        df, company_name = pd.read_html(io.BytesIO(uploaded_file.getvalue()), header=[0, 1])[0], str(pd.read_html(io.BytesIO(uploaded_file.getvalue()), header=[0, 1])[0].columns[0][0]).split(">>")[2].split("(")[0].strip() if ">>" in str(pd.read_html(io.BytesIO(uploaded_file.getvalue()), header=[0, 1])[0].columns[0][0]) else "Unknown Company"
-        df.columns, df = [str(c[1]) for c in df.columns], df.rename(columns={df.columns[0]: "Metric"}).dropna(subset=["Metric"]).reset_index(drop=True)
-        is_duplicate, df['unique_metric_id'] = df.duplicated(subset=['Metric'], keep=False), df['Metric']
-        df.loc[is_duplicate, 'unique_metric_id'], df = df['Metric'] + ' (row ' + (df.index + 2).astype(str) + ')', df.set_index('unique_metric_id').drop(columns=['Metric'])
+        df = pd.read_html(io.BytesIO(uploaded_file.getvalue()), header=[0, 1])[0]
+        company_name = str(df.columns[0][0]).split(">>")[2].split("(")[0].strip() if ">>" in str(df.columns[0][0]) else "Unknown Company"
+        
+        df.columns = [str(c[1]) for c in df.columns]
+        df = df.rename(columns={df.columns[0]: "Metric"}).dropna(subset=["Metric"]).reset_index(drop=True)
+        
+        is_duplicate = df.duplicated(subset=['Metric'], keep=False)
+        df['unique_metric_id'] = df['Metric']
+        df.loc[is_duplicate, 'unique_metric_id'] = df['Metric'] + ' (row ' + (df.index + 2).astype(str) + ')'
+        df = df.set_index('unique_metric_id').drop(columns=['Metric'])
+        
         return {"statement": df, "company_name": company_name}
     except Exception as e:
-        logger.error(f"Failed to parse HTML/XLS file {uploaded_file.name}: {e}"); return None
+        logger.error(f"Failed to parse HTML/XLS file {uploaded_file.name}: {e}")
+        return None
+
+### CHANGE: New function to handle CSV parsing
 def parse_csv_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
+    """Parses a single CSV file with a simple header."""
     try:
         df = pd.read_csv(io.BytesIO(uploaded_file.getvalue()))
-        if df.columns[0].lower() not in ['metric', 'item', 'description']: st.warning(f"For CSV '{uploaded_file.name}', assuming '{df.columns[0]}' contains metrics.")
-        df = df.set_index(df.columns[0])
-        return {"statement": df, "company_name": "From CSV"}
+        
+        # Assume the first column contains the metrics
+        if df.columns[0].lower() not in ['metric', 'item', 'description']:
+             st.warning(f"For CSV '{uploaded_file.name}', assuming the first column ('{df.columns[0]}') contains the metrics.")
+        
+        metric_col = df.columns[0]
+        df = df.set_index(metric_col)
+        
+        company_name = "From CSV" # CSVs don't have a standard company name header
+        return {"statement": df, "company_name": company_name}
     except Exception as e:
-        logger.error(f"Failed to parse CSV file {uploaded_file.name}: {e}"); return None
+        logger.error(f"Failed to parse CSV file {uploaded_file.name}: {e}")
+        return None
+
+### CHANGE: Main parser now acts as a router
 def parse_single_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
+    """Routes the uploaded file to the correct parser based on its extension."""
     file_extension = uploaded_file.name.split('.')[-1].lower()
-    parsed_data = parse_csv_file(uploaded_file) if file_extension == 'csv' else parse_html_xls_file(uploaded_file) if file_extension in ['html', 'htm', 'xls', 'xlsx'] else None
-    if not parsed_data: st.warning(f"Could not parse '{uploaded_file.name}'."); return None
-    df, year_cols = parsed_data["statement"], {c: YEAR_REGEX.search(str(c)).group(0) for c in parsed_data["statement"].columns if YEAR_REGEX.search(str(c))}
-    df, valid_years = df.rename(columns=year_cols), sorted([c for c in df.columns if str(c).isdigit()], key=int)
-    if not valid_years: st.warning(f"No valid year columns found in '{uploaded_file.name}'."); return None
-    parsed_data["statement"] = DataProcessor.clean_numeric_data(df[valid_years].copy()).dropna(how='all')
+
+    if file_extension == 'csv':
+        parsed_data = parse_csv_file(uploaded_file)
+    elif file_extension in ['html', 'htm', 'xls', 'xlsx']:
+        parsed_data = parse_html_xls_file(uploaded_file)
+    else:
+        st.error(f"Unsupported file type: {file_extension}")
+        return None
+    
+    if parsed_data is None:
+        st.warning(f"Could not parse '{uploaded_file.name}'. It might be in an unsupported format or corrupted.")
+        return None
+
+    # Common processing for all file types
+    df = parsed_data["statement"]
+    year_cols = {c: YEAR_REGEX.search(str(c)).group(0) for c in df.columns if YEAR_REGEX.search(str(c))}
+    df = df.rename(columns=year_cols)
+    valid_years = sorted([c for c in df.columns if str(c).isdigit()], key=int)
+    
+    if not valid_years:
+        st.warning(f"No valid year columns found in '{uploaded_file.name}'.")
+        return None
+        
+    df_proc = DataProcessor.clean_numeric_data(df[valid_years].copy()).dropna(how='all')
+    parsed_data["statement"] = df_proc
     return parsed_data
 
 class DashboardApp:
     def __init__(self):
         self._initialize_state()
         self.chart_builders = {"Line": ChartGenerator.create_line_chart, "Bar": ChartGenerator.create_bar_chart}
+
     def _initialize_state(self):
         defaults = {"analysis_data": None, "metric_mapping": {}, "pn_results": None, "pn_mappings": {}}
         for k, v in defaults.items():
             if k not in st.session_state: st.session_state[k] = v
+
     @st.cache_data(show_spinner="Processing and merging files...")
     def process_and_merge_files(_self, uploaded_files: List[UploadedFile]) -> Optional[Dict[str, Any]]:
         if not uploaded_files: return None
@@ -211,35 +250,63 @@ class DashboardApp:
         for file in uploaded_files:
             if parsed := parse_single_file(file):
                 all_dfs.append(parsed["statement"])
-                if not first_found and parsed["company_name"] not in ["Unknown Company", "From CSV"]: company_name, first_found = parsed["company_name"], True
+                if not first_found and parsed["company_name"] not in ["Unknown Company", "From CSV"]:
+                    company_name, first_found = parsed["company_name"], True
         if not all_dfs: st.error("None of the files could be parsed."); return None
         merged_df = pd.concat(all_dfs, axis=0)
-        merged_df, year_cols = merged_df[~merged_df.index.duplicated(keep='first')], sorted([col for col in merged_df.columns if str(col).isdigit()], key=int)
+        merged_df = merged_df[~merged_df.index.duplicated(keep='first')]
+        year_cols = sorted([col for col in merged_df.columns if str(col).isdigit()], key=int)
         merged_df = merged_df[year_cols]
         return {"statement": merged_df, "company_name": company_name, "data_quality": asdict(DataProcessor.calculate_data_quality(merged_df))}
+
     def _handle_file_upload(self):
-        files, st.session_state.metric_mapping, st.session_state.pn_results, st.session_state.pn_mappings = st.session_state.get("file_uploader_key", []), {}, None, {}
+        files = st.session_state.get("file_uploader_key", [])
         st.session_state.analysis_data = self.process_and_merge_files(files)
+        st.session_state.metric_mapping = {}
+        st.session_state.pn_results = None
+        st.session_state.pn_mappings = {}
+
     def run(self):
         self.render_sidebar()
         self.render_main_panel()
+
     def render_sidebar(self):
-        st.sidebar.title("📂 Upload & Options"), st.sidebar.info("Upload financial statements (CSV, HTML, XLSX).")
-        st.sidebar.file_uploader("Upload Financials", type=ALLOWED_FILE_TYPES, accept_multiple_files=True, key="file_uploader_key", on_change=self._handle_file_upload)
-        st.sidebar.title("⚙️ Display Settings"), st.sidebar.checkbox("Show Data Quality", key="show_data_quality", value=True)
+        st.sidebar.title("📂 Upload & Options")
+        ### CHANGE: Updated label
+        st.sidebar.info("Upload financial statements (CSV, HTML, XLSX).")
+        st.sidebar.file_uploader(
+            "Upload Financials",
+            type=ALLOWED_FILE_TYPES,
+            accept_multiple_files=True,
+            key="file_uploader_key",
+            on_change=self._handle_file_upload
+        )
+        st.sidebar.title("⚙️ Display Settings")
+        st.sidebar.checkbox("Show Data Quality", key="show_data_quality", value=True)
         if st.session_state.analysis_data: self._render_general_metric_mapper()
+
     def _render_general_metric_mapper(self):
+        # ... (unchanged) ...
         with st.sidebar.expander("📊 General Metric Mapping", expanded=False):
             st.info("Map metrics for the 'Advanced Analysis' tab.")
-            all_req_metrics, available_metrics, current_mapping = sorted(list(set(m for v in REQUIRED_METRICS.values() for m in v))), st.session_state.analysis_data["statement"].index.tolist(), st.session_state.metric_mapping.copy()
+            all_req_metrics = sorted(list(set(m for v in REQUIRED_METRICS.values() for m in v)))
+            available_metrics = st.session_state.analysis_data["statement"].index.tolist()
+            current_mapping = st.session_state.metric_mapping.copy()
             for std_metric in all_req_metrics:
-                if std_metric not in current_mapping and std_metric in available_metrics: current_mapping[std_metric] = std_metric
-                st.session_state.metric_mapping[std_metric] = st.selectbox(f"**{std_metric}**", [''] + available_metrics, index=(available_metrics.index(current_mapping.get(std_metric, '')) + 1) if current_mapping.get(std_metric) in available_metrics else 0, key=f"map_{std_metric}")
+                if std_metric not in current_mapping and std_metric in available_metrics:
+                    current_mapping[std_metric] = std_metric
+            for std_metric in all_req_metrics:
+                st.session_state.metric_mapping[std_metric] = st.selectbox(f"**{std_metric}**", options=[''] + available_metrics, index=(available_metrics.index(current_mapping.get(std_metric, '')) + 1) if current_mapping.get(std_metric) in available_metrics else 0, key=f"map_{std_metric}")
+
     def render_main_panel(self):
+        # ... (unchanged) ...
         st.markdown("<div class='main-header'>💹 Advanced Financial Dashboard</div>", unsafe_allow_html=True)
-        if not st.session_state.analysis_data: st.info("👋 Welcome! Please upload one or more financial data files to begin."); return
-        data, df, dq_dict = st.session_state.analysis_data, st.session_state.analysis_data["statement"], st.session_state.analysis_data["data_quality"]
-        init_args = {k: dq_dict[k] for k in ['total_rows', 'missing_values', 'missing_percentage', 'duplicate_rows']}
+        if not st.session_state.analysis_data:
+            st.info("👋 Welcome! Please upload one or more financial data files to begin.")
+            return
+        data, df = st.session_state.analysis_data, st.session_state.analysis_data["statement"]
+        dq_dict = data["data_quality"]
+        init_args = { 'total_rows': dq_dict['total_rows'], 'missing_values': dq_dict['missing_values'], 'missing_percentage': dq_dict['missing_percentage'], 'duplicate_rows': dq_dict['duplicate_rows']}
         dq = DataQualityMetrics(**init_args)
         st.subheader(f"Company Analysis: {data['company_name']}")
         if st.session_state.show_data_quality:
@@ -251,11 +318,16 @@ class DashboardApp:
         with tab_data: self._render_data_table_tab(df)
         with tab_adv: self._render_advanced_analysis_tab(df)
         with tab_pn: self._render_penman_nissim_tab(df)
+
     def _render_data_table_tab(self, df: pd.DataFrame):
-        st.subheader("Merged and Cleaned Financial Data"), st.dataframe(df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
+        # ... (unchanged) ...
+        st.subheader("Merged and Cleaned Financial Data")
+        st.dataframe(df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
+
     def _render_penman_nissim_tab(self, df: pd.DataFrame):
+        # ... (unchanged, uses the improved UI from the previous step) ...
         st.header("🔍 Penman-Nissim Reformulation Analysis")
-        st.info("This analysis separates operating and financing activities to reveal a company's core operational profitability (RNOA).")
+        st.info("This analysis separates operating and financing activities to reveal a company's core operational profitability (RNOA). It provides a clearer view than traditional accounting metrics.")
         available_metrics = df.index.tolist()
         if 'pn_mappings' not in st.session_state: st.session_state.pn_mappings = {}
         with st.expander("Configure Penman-Nissim Metrics", expanded=True):
@@ -263,12 +335,15 @@ class DashboardApp:
             financial_liability_keywords = ['debt', 'borrowings', 'loan from', 'notes payable', 'bonds']
             default_fin_assets = [m for m in available_metrics if any(key in m.lower() for key in financial_asset_keywords)]
             default_fin_liabilities = [m for m in available_metrics if any(key in m.lower() for key in financial_liability_keywords)]
-            st.session_state.pn_mappings['Financial Assets'] = st.multiselect("1. Select Financial Assets", available_metrics, default=st.session_state.pn_mappings.get('Financial Assets', default_fin_assets), help="Assets for investment/financing, not core operations.")
-            st.session_state.pn_mappings['Financial Liabilities'] = st.multiselect("2. Select Financial Liabilities", available_metrics, default=st.session_state.pn_mappings.get('Financial Liabilities', default_fin_liabilities), help="Interest-bearing debt.")
-            st.markdown("---"), st.markdown("##### 3. Confirm Core Statement Items")
+            st.session_state.pn_mappings['Financial Assets'] = st.multiselect("1. Select Financial Assets", available_metrics, default=st.session_state.pn_mappings.get('Financial Assets', default_fin_assets), help="Assets held for investment/financing purposes, not core operations. (e.g., 'Cash', 'Marketable Securities', 'Long-term Investments')")
+            st.session_state.pn_mappings['Financial Liabilities'] = st.multiselect("2. Select Financial Liabilities", available_metrics, default=st.session_state.pn_mappings.get('Financial Liabilities', default_fin_liabilities), help="Interest-bearing debt used to finance the company. (e.g., 'Short-term Debt', 'Bonds Payable', 'Long-term Borrowings')")
+            st.markdown("---")
+            st.markdown("##### 3. Confirm Core Statement Items")
             def get_idx(m_name, default_val=''):
                 val_in_state = st.session_state.pn_mappings.get(m_name)
-                return available_metrics.index(val_in_state) + 1 if val_in_state and val_in_state in available_metrics else available_metrics.index(default_val) + 1 if default_val and default_val in available_metrics else 0
+                if val_in_state and val_in_state in available_metrics: return available_metrics.index(val_in_state) + 1
+                if default_val and default_val in available_metrics: return available_metrics.index(default_val) + 1
+                return 0
             c1, c2, c3 = st.columns(3)
             st.session_state.pn_mappings['Total Assets'] = c1.selectbox("Total Assets", [''] + available_metrics, index=get_idx('Total Assets', 'Total Assets'), key='pn_ta')
             st.session_state.pn_mappings['Total Liabilities'] = c2.selectbox("Total Liabilities", [''] + available_metrics, index=get_idx('Total Liabilities', 'Total Liabilities'), key='pn_tl')
@@ -279,11 +354,16 @@ class DashboardApp:
             st.session_state.pn_mappings['Net Income'] = c6.selectbox("Net Income", [''] + available_metrics, index=get_idx('Net Income', 'Net Profit'), key='pn_ni')
             st.session_state.pn_mappings['Net Financial Expense'] = st.selectbox("Net Financial Expense (Proxy)", [''] + available_metrics, help="Use Interest Expense or a similar metric representing the cost of debt.", index=get_idx('Net Financial Expense', 'Interest Expense'), key='pn_nfe')
             st.markdown("")
-            if st.button("🚀 Run Penman-Nissim Analysis"): st.session_state.pn_results = PenmanNissimAnalyzer(df, st.session_state.pn_mappings).calculate_all()
+            if st.button("🚀 Run Penman-Nissim Analysis"):
+                analyzer = PenmanNissimAnalyzer(df, st.session_state.pn_mappings)
+                st.session_state.pn_results = analyzer.calculate_all()
         st.markdown("---")
         if st.session_state.pn_results:
             results = st.session_state.pn_results
-            st.success("✅ Reformulation successful: The accounting equation (NOA - NFO = Equity) holds true.") if results["validation_ok"] else st.error("⚠️ Reformulation check failed. The accounting equation does not balance. Please review your metric selections.")
+            if results["validation_ok"]:
+                st.success("✅ Reformulation successful: The accounting equation (NOA - NFO = Equity) holds true.")
+            else:
+                st.error("⚠️ Reformulation check failed. The accounting equation does not balance. Please review your metric selections.")
             all_pn_metrics = pd.concat([results['reformulated_bs'], results['ratios'], results['roe_decomposition']])
             st.subheader("Visual Analysis of P-N Metrics")
             v_c1, v_c2, v_c3 = st.columns([2,1,1])
@@ -295,7 +375,9 @@ class DashboardApp:
             with st.expander("Reformulated Balance Sheet", expanded=False): st.dataframe(results['reformulated_bs'].style.format("{:,.2f}", na_rep="-"))
             with st.expander("Core P-N Ratios", expanded=False): st.dataframe(results['ratios'].style.format("{:,.2f}", na_rep="-"))
             with st.expander("ROE Decomposition Analysis", expanded=False): st.dataframe(results['roe_decomposition'].style.format("{:,.2f}", na_rep="-"))
+
     def _render_advanced_analysis_tab(self, df: pd.DataFrame):
+        # ... (unchanged) ...
         st.header("💡 General Advanced Analysis")
         mapping = {v: k for k, v in st.session_state.metric_mapping.items() if v}
         if not mapping: st.warning("Please map metrics in the sidebar for this tab."); return
@@ -308,19 +390,26 @@ class DashboardApp:
                 v_c1, v_c2, v_c3 = st.columns([2,1,1])
                 selected = v_c1.multiselect("Select Ratios to plot:", all_ratios_df.index.unique().tolist(), default=all_ratios_df.index.unique().tolist()[:2])
                 chart_type = v_c2.selectbox("Chart Type", self.chart_builders.keys(), key="adv_chart")
-                if selected: st.plotly_chart(self.chart_builders[chart_type](all_ratios_df, selected, "Ratio Analysis", "plotly_white", True, "Linear", "Ratio"), use_container_width=True)
+                if selected:
+                    fig = self.chart_builders[chart_type](all_ratios_df, selected, "Ratio Analysis", "plotly_white", True, "Linear", "Ratio")
+                    st.plotly_chart(fig, use_container_width=True)
             with st.expander("Data Tables", expanded=False):
-                for ratio_type, ratio_df in ratios.items(): st.subheader(f"{ratio_type} Ratios"), st.dataframe(ratio_df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
+                for ratio_type, ratio_df in ratios.items():
+                    st.subheader(f"{ratio_type} Ratios")
+                    st.dataframe(ratio_df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
+
     def _render_primary_visualization_tab(self, df: pd.DataFrame):
+        # ... (unchanged) ...
         st.header("Primary Financial Data Visualization")
         col1, col2, col3, col4 = st.columns([3, 1, 1, 2])
-        metrics = col1.multiselect("Select metrics:", df.index.tolist(), default=df.index[:2].tolist())
+        metrics = col1.multiselect("Select metrics from uploaded files:", df.index.tolist(), default=df.index[:2].tolist())
         chart = col2.selectbox("Chart Type:", self.chart_builders.keys(), key="primary_chart_type")
         theme = col3.selectbox("Theme:", ["plotly_white", "plotly_dark"], key="primary_theme")
         scale = col4.selectbox("Y-Axis Scale:", ["Linear", "Logarithmic", "Normalized (Base 100)"], key="primary_scale")
         if metrics:
             plot_df, y_title = (DataProcessor.normalize_to_100(df, metrics), "Normalized Value (Base 100)") if scale == "Normalized (Base 100)" else (df, "Amount (₹ Cr.)")
-            if fig := self.chart_builders[chart](plot_df, metrics, "Primary Financials Over Time", theme, True, scale, y_title): st.plotly_chart(fig, use_container_width=True)
+            fig = self.chart_builders[chart](plot_df, metrics, "Primary Financials Over Time", theme, True, scale, y_title)
+            if fig: st.plotly_chart(fig, use_container_width=True)
         else: st.warning("Please select at least one metric.")
 
 # --- 7. App Execution ---
