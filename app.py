@@ -1,48 +1,115 @@
-"""
-Enhanced Financial Dashboard - Final Integrated Version
-A powerful Streamlit-based dashboard for financial data analysis.
-"""
+# Enhanced Financial Dashboard - Complete Integrated Version
+# A robust Streamlit application for financial data analysis with enhanced error handling,
+# performance optimization, and additional features.
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import io
-import logging
-import re
+from plotly.subplots import make_subplots
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass, field
+import io
+import logging
 from datetime import datetime
+import re
+from dataclasses import dataclass, field
 import warnings
 
-# Configure page and logging
-warnings.filterwarnings("ignore")
-st.set_page_config(page_title="Capitaline Financial Dashboard", page_icon="📊", layout="wide")
-logging.basicConfig(level=logging.INFO)
+# Suppress warnings for cleaner output
+warnings.filterwarnings('ignore')
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# -------------------- CSS Styling --------------------
+# Configure Streamlit page
+st.set_page_config(
+    page_title="Advanced Financial Dashboard",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Enhanced CSS with better styling
 st.markdown("""
 <style>
-.main-header {
-    font-size: 2.5rem;
-    font-weight: bold;
-    color: #1f77b4;
-    text-align: center;
-    margin-bottom: 2rem;
-}
-.stButton>button {
-    background: linear-gradient(90deg, #1f77b4, #17a2b8);
-    color: white;
-    border-radius: 8px;
-    padding: 12px 24px;
-    font-weight: 600;
-}
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 1rem;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        margin: 0.5rem 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .success-message {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.25rem;
+        margin: 1rem 0;
+    }
+    .error-message {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.25rem;
+        margin: 1rem 0;
+    }
+    .stButton>button {
+        background: linear-gradient(90deg, #1f77b4, #17a2b8);
+        color: white;
+        border-radius: 8px;
+        border: none;
+        padding: 12px 24px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+    .sidebar .stSelectbox label {
+        font-weight: 600;
+        color: #2c3e50;
+    }
+    .data-quality-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+    .quality-high { background-color: #28a745; }
+    .quality-medium { background-color: #ffc107; }
+    .quality-low { background-color: #dc3545; }
+    .welcome-container {
+        text-align: center;
+        padding: 3rem 1rem;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        border-radius: 15px;
+        margin: 2rem 0;
+    }
+    .feature-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        margin: 1rem 0;
+        border-left: 4px solid #1f77b4;
+    }
 </style>
 """, unsafe_allow_html=True)
-
-# -------------------- Data Classes --------------------
 
 @dataclass
 class DataQualityMetrics:
@@ -60,27 +127,27 @@ class DataQualityMetrics:
         else:
             self.quality_score = "Low"
 
-
 class FileValidator:
     @staticmethod
     def validate_file(uploaded_file) -> Tuple[bool, str]:
         if uploaded_file is None:
             return False, "No file uploaded"
         if uploaded_file.size > 10 * 1024 * 1024:
-            return False, "File too large (max 10MB)"
-        ext = uploaded_file.name.lower().split('.')[-1]
-        if ext not in ['xlsx', 'xls', 'html', 'htm']:
-            return False, f"Unsupported file type: {ext}"
-        return True, ext
-
+            return False, "File size exceeds 10MB limit"
+        allowed_types = ['xls', 'xlsx', 'html', 'htm']
+        file_extension = uploaded_file.name.split('.')[-1].lower()
+        if file_extension not in allowed_types:
+            return False, f"Unsupported file type: {file_extension}"
+        return True, file_extension
 
 class DataProcessor:
     @staticmethod
     def clean_numeric_data(df: pd.DataFrame) -> pd.DataFrame:
         for col in df.columns:
-            df[col] = df[col].astype(str).str.replace(r"[,\(\)₹]|Rs\.", "", regex=True)
-            df[col] = df[col].str.replace('(', '-').str.replace(')', '')
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            if df[col].dtype == 'object':
+                df[col] = df[col].astype(str).str.replace(r'[,\(\)₹]|Rs\.', '', regex=True)
+                df[col] = df[col].str.replace('(', '-').str.replace(')', '')
+            df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
 
     @staticmethod
@@ -88,168 +155,220 @@ class DataProcessor:
         outliers = {}
         numeric_df = df.select_dtypes(include=np.number)
         for col in numeric_df.columns:
-            q1 = numeric_df[col].quantile(0.25)
-            q3 = numeric_df[col].quantile(0.75)
-            iqr = q3 - q1
-            if iqr > 0:
-                lower = q1 - 1.5 * iqr
-                upper = q3 + 1.5 * iqr
-                indices = numeric_df[(numeric_df[col] < lower) | (numeric_df[col] > upper)].index.tolist()
-                if indices:
-                    outliers[col] = indices
+            Q1 = numeric_df[col].quantile(0.25)
+            Q3 = numeric_df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            if IQR > 0:
+                lower = Q1 - 1.5 * IQR
+                upper = Q3 + 1.5 * IQR
+                outlier_idx = numeric_df[(numeric_df[col] < lower) | (numeric_df[col] > upper)].index.tolist()
+                if outlier_idx:
+                    outliers[col] = outlier_idx
         return outliers
 
     @staticmethod
     def calculate_data_quality(df: pd.DataFrame) -> DataQualityMetrics:
         total_cells = df.size
-        missing_values = df.isnull().sum().sum()
+        if total_cells == 0:
+            return DataQualityMetrics(0, 0, 0, 0)
+        missing = df.isnull().sum().sum()
         return DataQualityMetrics(
-            total_rows=df.shape[0],
-            missing_values=missing_values,
-            missing_percentage=(missing_values / total_cells * 100) if total_cells else 0,
+            total_rows=len(df),
+            missing_values=missing,
+            missing_percentage=(missing / total_cells) * 100,
             duplicate_rows=df.duplicated().sum()
         )
 
-# -------------------- File Parser --------------------
-
 @st.cache_data(show_spinner=False)
 def parse_capitaline_file(uploaded_file) -> Optional[Dict[str, Any]]:
-    is_valid, ext = FileValidator.validate_file(uploaded_file)
+    if uploaded_file is None: return None
+    is_valid, file_ext = FileValidator.validate_file(uploaded_file)
     if not is_valid:
-        st.error(ext)
+        st.error(f"File validation failed: {file_ext}")
         return None
-
     try:
         content = uploaded_file.getvalue()
-
-        if ext in ['html', 'htm']:
-            df = pd.read_html(io.BytesIO(content), header=[0, 1])[0]
-        elif ext == 'xls':
-            df = pd.read_excel(io.BytesIO(content), header=[0, 1], engine="xlrd")
-        else:
-            df = pd.read_excel(io.BytesIO(content), header=[0, 1], engine="openpyxl")
-
-        # Company Name
+        df = pd.read_html(io.BytesIO(content), header=[0, 1])[0]
         company_name = "Unknown Company"
         try:
-            info = str(df.columns[0][0])
-            if ">>" in info:
-                company_name = info.split(">>")[2].split("(")[0].strip()
-        except:
-            pass
-
+            header_str = str(df.columns[0][0])
+            if ">>" in header_str:
+                company_name = header_str.split(">>")[2].split("(")[0].strip()
+        except: pass
         df.columns = [str(col[1]) for col in df.columns]
         df = df.rename(columns={df.columns[0]: "Metric"}).dropna(subset=["Metric"]).set_index("Metric")
-
         year_cols = {}
         for col in df.columns:
-            year = "".join(filter(str.isdigit, str(col)))
-            if len(year) == 4:
-                year_cols[col] = year
+            year = ''.join(filter(str.isdigit, col))
+            if len(year) >= 4:
+                year_cols[col] = year[:4]
         df = df.rename(columns=year_cols)
-
-        valid_years = sorted([col for col in df.columns if col.isdigit() and 1990 < int(col) < 2050], reverse=True)
-        if not valid_years:
+        year_columns = sorted([col for col in df.columns if col.isdigit() and '1990' < col < '2050'], reverse=True)
+        if not year_columns:
             st.error("No valid year columns found.")
             return None
-
-        df_final = df[valid_years].copy()
+        df_final = df[year_columns].copy()
         df_final = DataProcessor.clean_numeric_data(df_final).dropna(how='all')
-
         return {
             "statement": df_final,
             "company_name": company_name,
             "data_quality": DataProcessor.calculate_data_quality(df_final),
             "outliers": DataProcessor.detect_outliers(df_final),
-            "year_columns": valid_years,
-            "file_info": {"name": uploaded_file.name, "size": uploaded_file.size, "type": ext}
+            "year_columns": year_columns,
+            "file_info": {
+                "name": uploaded_file.name,
+                "size": uploaded_file.size,
+                "type": file_ext
+            }
         }
-
     except Exception as e:
-        logger.error(f"Parsing error: {e}")
-        st.error(f"Parsing failed: {e}")
+        logger.error(f"Error parsing file: {e}")
+        st.error(f"An error occurred while parsing: {str(e)}")
         return None
 
-# -------------------- Chart Renderer --------------------
+class ChartGenerator:
+    @staticmethod
+    def _create_base_figure(title: str, theme: str, grid: bool) -> go.Figure:
+        fig = go.Figure()
+        fig.update_layout(
+            title=dict(text=title, font=dict(size=20), x=0.5),
+            xaxis_title="Year", yaxis_title="Amount (₹ Cr.)",
+            template=theme, height=500, hovermode='x unified',
+            xaxis=dict(showgrid=grid), yaxis=dict(showgrid=grid),
+            legend_title_text='Metrics'
+        )
+        return fig
 
-def generate_chart(df: pd.DataFrame, metrics: List[str], chart_type: str):
-    df_plot = df.loc[metrics].T
-    df_plot.index = df_plot.index.astype(str)
-    fig = go.Figure()
-    for metric in metrics:
-        y = df_plot[metric]
-        if chart_type == "Line Chart":
-            fig.add_trace(go.Scatter(x=df_plot.index, y=y, mode="lines+markers", name=metric))
-        elif chart_type == "Bar Chart":
-            fig.add_trace(go.Bar(x=df_plot.index, y=y, name=metric))
-        elif chart_type == "Area Chart":
-            fig.add_trace(go.Scatter(x=df_plot.index, y=y, fill="tozeroy", mode="lines", name=metric))
-    fig.update_layout(
-        title=chart_type,
-        xaxis_title="Year",
-        yaxis_title="Amount (₹ Cr.)",
-        template="plotly_white"
-    )
-    return fig
+    @staticmethod
+    def create_line_chart(df, metrics, title, theme, grid):
+        fig = ChartGenerator._create_base_figure(title, theme, grid)
+        colors = px.colors.qualitative.Set1
+        for i, m in enumerate(metrics):
+            fig.add_trace(go.Scatter(x=df.columns, y=df.loc[m], mode='lines+markers',
+                                     name=m, line=dict(color=colors[i % len(colors)], width=3)))
+        return fig
 
-# -------------------- Dashboard UI --------------------
+    @staticmethod
+    def create_bar_chart(df, metrics, title, theme, grid):
+        fig = ChartGenerator._create_base_figure(title, theme, grid)
+        fig.update_layout(barmode='group')
+        colors = px.colors.qualitative.Set1
+        for i, m in enumerate(metrics):
+            fig.add_trace(go.Bar(x=df.columns, y=df.loc[m], name=m,
+                                 marker_color=colors[i % len(colors)]))
+        return fig
 
-def main():
-    st.markdown('<div class="main-header">📊 Capitaline Financial Dashboard</div>', unsafe_allow_html=True)
+    @staticmethod
+    def create_area_chart(df, metrics, title, theme, grid):
+        fig = ChartGenerator._create_base_figure(title, theme, grid)
+        colors = px.colors.qualitative.Set1
+        for i, m in enumerate(metrics):
+            fig.add_trace(go.Scatter(x=df.columns, y=df.loc[m], mode='lines',
+                                     name=m, fill='tonexty' if i > 0 else 'tozeroy',
+                                     line=dict(color=colors[i % len(colors)])))
+        return fig
 
-    st.sidebar.header("Upload Capitaline File")
-    uploaded_file = st.sidebar.file_uploader("Choose a file", type=["xls", "xlsx", "html", "htm"])
+    @staticmethod
+    def create_heatmap(df, metrics, title, theme, grid):
+        if len(metrics) < 2:
+            st.warning("Heatmap requires at least two metrics.")
+            return None
+        corr = df.loc[metrics].T.corr()
+        fig = go.Figure(data=go.Heatmap(z=corr.values, x=corr.columns, y=corr.columns,
+                                        colorscale='RdBu', zmid=0))
+        fig.update_layout(title=dict(text=title, font=dict(size=20)), template=theme, height=500)
+        return fig
 
-    if uploaded_file:
-        st.sidebar.write("Parsing file...")
-        result = parse_capitaline_file(uploaded_file)
-        if result:
-            df = result["statement"]
-            company = result["company_name"]
+class DashboardUI:
+    def __init__(self):
+        self.init_session_state()
 
-            st.success(f"Loaded data for: {company}")
+    def init_session_state(self):
+        defaults = {
+            "analysis_data": None,
+            "_uploaded_file_memo": None,
+            "chart_figure": None,
+            "selected_metrics": [],
+            "chart_type": "Line Chart",
+            "show_data_quality": False,
+            "show_outliers": False
+        }
+        for k, v in defaults.items():
+            if k not in st.session_state:
+                st.session_state[k] = v
 
-            # Display data quality
-            with st.expander("📋 Data Quality"):
-                dq = result["data_quality"]
-                st.metric("Total Rows", dq.total_rows)
-                st.metric("Missing Values", dq.missing_values)
-                st.metric("Missing %", f"{dq.missing_percentage:.2f}%")
-                st.metric("Duplicate Rows", dq.duplicate_rows)
-                st.write(f"Quality Score: **{dq.quality_score}**")
+    def render_sidebar(self):
+        st.sidebar.title("📂 Upload Financial File")
+        uploaded_file = st.sidebar.file_uploader("Upload Capitaline File", type=["html", "htm", "xls", "xlsx"])
+        if uploaded_file and uploaded_file != st.session_state["_uploaded_file_memo"]:
+            st.session_state["_uploaded_file_memo"] = uploaded_file
+            st.session_state["analysis_data"] = parse_capitaline_file(uploaded_file)
+        st.sidebar.checkbox("Show Data Quality Info", key="show_data_quality")
+        st.sidebar.checkbox("Show Outliers", key="show_outliers")
 
-            st.markdown("---")
-            st.subheader("📈 Chart Visualization")
-            metrics = st.multiselect("Select Metrics to Visualize", df.index.tolist()[:30])
-            chart_type = st.selectbox("Select Chart Type", ["Line Chart", "Bar Chart", "Area Chart"])
+    def render_main_panel(self):
+        st.markdown("<div class='main-header'>📊 Financial Dashboard</div>", unsafe_allow_html=True)
+        if st.session_state["analysis_data"] is None:
+            st.markdown(\"\"\"
+                <div class='welcome-container'>
+                    <h2>Welcome to the Financial Dashboard</h2>
+                    <p>Upload a Capitaline file to begin analyzing financial data visually.</p>
+                </div>
+            \"\"\", unsafe_allow_html=True)
+            return
 
-            if st.button("Generate Chart"):
-                if metrics:
-                    chart = generate_chart(df, metrics, chart_type)
-                    st.plotly_chart(chart, use_container_width=True)
-                else:
-                    st.warning("Please select at least one metric.")
+        data = st.session_state["analysis_data"]
+        df = data["statement"]
+        st.subheader(f"Company: {data['company_name']}")
 
-            st.markdown("---")
-            st.subheader("📄 Data Table")
-            st.dataframe(df.style.format("{:,.2f}"))
+        if st.session_state["show_data_quality"]:
+            q = data["data_quality"]
+            cls = "quality-high" if q.quality_score == "High" else "quality-medium" if q.quality_score == "Medium" else "quality-low"
+            st.markdown(f\"\"\"
+                <div class="feature-card">
+                    <span class="data-quality-indicator {cls}"></span>
+                    <b>Data Quality:</b> {q.quality_score}<br>
+                    Missing: {q.missing_values} values ({q.missing_percentage:.2f}%)<br>
+                    Duplicates: {q.duplicate_rows} rows
+                </div>
+            \"\"\", unsafe_allow_html=True)
 
-            with st.expander("⚠️ Outliers Detected"):
-                if result["outliers"]:
-                    for year, metrics in result["outliers"].items():
-                        st.write(f"**{year}**: {', '.join(metrics)}")
-                else:
-                    st.success("No significant outliers detected.")
+        if st.session_state["show_outliers"] and data["outliers"]:
+            st.markdown("<div class='feature-card'><b>Outliers Detected:</b>", unsafe_allow_html=True)
+            for metric, indices in data["outliers"].items():
+                st.markdown(f"- {metric}: {len(indices)} outlier(s)")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        metrics = df.index.tolist()
+        selected = st.multiselect("Select metrics to visualize:", metrics, default=metrics[:2])
+        st.session_state["selected_metrics"] = selected
+
+        chart_type = st.selectbox("Select Chart Type:", ["Line Chart", "Bar Chart", "Area Chart", "Heatmap"])
+        theme = st.selectbox("Theme:", ["plotly_white", "plotly_dark", "ggplot2"])
+        grid = st.checkbox("Show Grid", value=True)
+
+        if selected:
+            if chart_type == "Line Chart":
+                fig = ChartGenerator.create_line_chart(df, selected, "Financial Trend", theme, grid)
+            elif chart_type == "Bar Chart":
+                fig = ChartGenerator.create_bar_chart(df, selected, "Financial Bar View", theme, grid)
+            elif chart_type == "Area Chart":
+                fig = ChartGenerator.create_area_chart(df, selected, "Area Representation", theme, grid)
+            elif chart_type == "Heatmap":
+                fig = ChartGenerator.create_heatmap(df, selected, "Correlation Map", theme, grid)
+            else:
+                fig = None
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
         else:
-            st.error("Failed to parse file.")
+            st.warning("Please select at least one metric to generate chart.")
 
-    else:
-        st.markdown("""
-            <div class="welcome-container">
-            <h2>🎯 Welcome to the Capitaline Financial Dashboard</h2>
-            <p>Upload your Capitaline xls/xlsx/html file in the sidebar to get started.</p>
-            </div>
-        """, unsafe_allow_html=True)
-
+# Run the app
 if __name__ == "__main__":
-    main()
+    try:
+        dashboard = DashboardUI()
+        dashboard.render_sidebar()
+        dashboard.render_main_panel()
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        st.error(f"Something went wrong: {e}")
