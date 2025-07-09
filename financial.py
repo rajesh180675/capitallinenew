@@ -7,7 +7,7 @@ import io
 import logging
 import re
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict ### CHANGE ###: Import asdict
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -19,6 +19,7 @@ from sklearn.linear_model import LinearRegression
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 # --- 2. Configuration ---
+# ... (No changes here)
 warnings.filterwarnings('ignore')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -27,7 +28,6 @@ MAX_FILE_SIZE_MB = 10
 ALLOWED_FILE_TYPES = ['html', 'htm', 'xls', 'xlsx']
 YEAR_REGEX = re.compile(r'\b(19[8-9]\d|20\d\d)\b')
 
-# Standard metric names required for advanced analysis
 REQUIRED_METRICS = {
     'Profitability': ['Revenue', 'Gross Profit', 'Operating Profit', 'EBIT', 'Net Profit', 'Shareholders Equity', 'Total Equity', 'Total Assets', 'Current Liabilities'],
     'Liquidity': ['Current Assets', 'Current Liabilities', 'Inventory', 'Cash and Cash Equivalents'],
@@ -38,7 +38,9 @@ REQUIRED_METRICS = {
     'Growth & Trends': ['Revenue', 'Net Profit', 'EBIT']
 }
 
+
 # --- 3. Page and Style Configuration ---
+# ... (No changes here)
 st.set_page_config(
     page_title="Advanced Financial Dashboard",
     page_icon="💹",
@@ -60,7 +62,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. Data Structures and Basic Classes (from original script) ---
+
+# --- 4. Data Structures and Basic Classes ---
+# ... (No changes in these class definitions)
 @dataclass
 class DataQualityMetrics:
     total_rows: int; missing_values: int; missing_percentage: float; duplicate_rows: int
@@ -71,6 +75,7 @@ class DataQualityMetrics:
         else: self.quality_score = "Low"
 
 class FileValidator:
+    # ... (No changes)
     @staticmethod
     def validate_file(uploaded_file: UploadedFile) -> Tuple[bool, str]:
         if uploaded_file is None: return False, "No file uploaded."
@@ -80,6 +85,7 @@ class FileValidator:
         return True, ext
 
 class DataProcessor:
+    # ... (No changes)
     @staticmethod
     def clean_numeric_data(df: pd.DataFrame) -> pd.DataFrame:
         for col in df.columns:
@@ -105,14 +111,13 @@ class DataProcessor:
             else:
                 df_scaled.loc[metric] = np.nan
         return df_scaled
-
-class ChartGenerator: # (No changes needed in this class)
+# ... (Rest of classes are unchanged)
+class ChartGenerator:
     @staticmethod
     def _create_base_figure(title, theme, show_grid, yaxis_title):
         fig = go.Figure()
         fig.update_layout(title={'text': title, 'x': 0.5}, xaxis_title="Year", yaxis_title=yaxis_title, template=theme, height=500, hovermode='x unified', xaxis={'showgrid': show_grid}, yaxis={'showgrid': show_grid}, legend_title_text='Metrics')
         return fig
-
     @staticmethod
     def create_line_chart(df, metrics, title, theme, show_grid, scale_type, yaxis_title):
         fig = ChartGenerator._create_base_figure(title, theme, show_grid, yaxis_title)
@@ -120,14 +125,12 @@ class ChartGenerator: # (No changes needed in this class)
             fig.add_trace(go.Scatter(x=df.columns, y=df.loc[metric], mode='lines+markers', name=metric))
         if scale_type == 'Logarithmic': fig.update_layout(yaxis_type='log')
         return fig
-
     @staticmethod
     def create_bar_chart(df, metrics, title, theme, show_grid, scale_type, yaxis_title):
         fig = ChartGenerator._create_base_figure(title, theme, show_grid, yaxis_title)
         for metric in metrics: fig.add_trace(go.Bar(x=df.columns, y=df.loc[metric], name=metric))
         if scale_type == 'Logarithmic': fig.update_layout(yaxis_type='log')
         return fig
-
     @staticmethod
     def create_heatmap(df, metrics, title, theme, **kwargs):
         if len(metrics) < 2:
@@ -135,9 +138,6 @@ class ChartGenerator: # (No changes needed in this class)
             return None
         corr = df.loc[metrics].T.corr()
         return go.Figure(data=go.Heatmap(z=corr.values, x=corr.columns, y=corr.columns, colorscale='RdBu_r', zmid=0)).update_layout(title={'text': title, 'x': 0.5}, template=theme)
-
-# --- 5. Advanced Financial Analysis Modules ---
-# (No changes needed in these classes)
 class FinancialRatioCalculator:
     @staticmethod
     def calculate_all_ratios(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
@@ -171,9 +171,7 @@ class FinancialRatioCalculator:
         if (ebit := get('EBIT')) is not None and (ie := get('Interest Expense')) is not None:
             lev_ratios['Interest Coverage'] = ebit / ie
         if not lev_ratios.empty: ratios['Leverage'] = lev_ratios.T.dropna(how='all')
-
         return ratios
-
 class GrowthAnalyzer:
     @staticmethod
     def calculate_cagr(df: pd.DataFrame, metrics: List[str]) -> pd.DataFrame:
@@ -186,7 +184,6 @@ class GrowthAnalyzer:
                     cagr = ((series.iloc[-1] / series.iloc[0]) ** (1/years) - 1) * 100
                     results[metric] = {'CAGR %': cagr, 'Start Value': series.iloc[0], 'End Value': series.iloc[-1], 'Years': years}
         return pd.DataFrame(results).T
-
 class TrendAnalyzer:
     @staticmethod
     def forecast_metrics(df: pd.DataFrame, metrics: List[str], periods: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -205,7 +202,6 @@ class TrendAnalyzer:
                         forecasts.loc[metric, str(year)] = preds[i]
                     stats.loc[metric, ['R-squared', 'Trend']] = [r2, 'Increasing' if model.coef_[0] > 0 else 'Decreasing']
         return forecasts, stats
-
 class DuPontAnalyzer:
     @staticmethod
     def calculate_dupont(df: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -217,7 +213,6 @@ class DuPontAnalyzer:
         dupont['Equity Multiplier'] = df.loc['Total Assets'] / df.loc['Total Equity']
         dupont['ROE (DuPont) %'] = (dupont['Net Margin %'] * dupont['Asset Turnover'] * dupont['Equity Multiplier']) / 100
         return dupont.T
-
 class CashFlowAnalyzer:
     @staticmethod
     def calculate_fcf_metrics(df: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -232,9 +227,8 @@ class CashFlowAnalyzer:
 
 # --- 6. Core Application Logic ---
 
-# This helper function now just parses a single file and is NOT cached.
 def parse_single_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
-    """Parses a single financial data file and returns a dictionary with the dataframe and metadata."""
+    # ... (No changes here)
     if not FileValidator.validate_file(uploaded_file)[0]: return None
     try:
         df = pd.read_html(io.BytesIO(uploaded_file.getvalue()), header=[0, 1])[0]
@@ -246,7 +240,6 @@ def parse_single_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
         df.columns = [str(c[1]) for c in df.columns]
         df = df.rename(columns={df.columns[0]: "Metric"}).dropna(subset=["Metric"]).reset_index(drop=True)
         
-        # Improved unique metric ID generation
         is_duplicate = df.duplicated(subset=['Metric'], keep=False)
         df['unique_metric_id'] = df['Metric']
         df.loc[is_duplicate, 'unique_metric_id'] = df['Metric'] + ' (row ' + (df.index + 2).astype(str) + ')'
@@ -275,6 +268,7 @@ class DashboardApp:
         for k, v in defaults.items():
             if k not in st.session_state: st.session_state[k] = v
 
+    ### CHANGE ###: The function signature and return type are modified.
     @st.cache_data(show_spinner="Processing and merging files...")
     def process_and_merge_files(_self, uploaded_files: List[UploadedFile]) -> Optional[Dict[str, Any]]:
         """Processes a list of uploaded files, merges them, and returns a single analysis dictionary."""
@@ -297,28 +291,30 @@ class DashboardApp:
             st.error("None of the uploaded files could be parsed. Please check the file formats.")
             return None
 
-        # Merge dataframes, combining columns for the same year and stacking rows
         merged_df = pd.concat(all_dfs, axis=0)
-        
-        # Handle metrics that appear in multiple files by keeping the first one.
         merged_df = merged_df[~merged_df.index.duplicated(keep='first')]
         
-        # Ensure year columns are sorted
         year_cols = sorted([col for col in merged_df.columns if col.isdigit()], key=int)
         merged_df = merged_df[year_cols]
+
+        # Calculate data quality metrics and convert the object to a dictionary
+        data_quality_obj = DataProcessor.calculate_data_quality(merged_df)
+        data_quality_dict = asdict(data_quality_obj) ### CHANGE ###
 
         return {
             "statement": merged_df,
             "company_name": company_name,
-            "data_quality": DataProcessor.calculate_data_quality(merged_df)
+            "data_quality": data_quality_dict  # Return a dictionary, not an object
         }
 
     def _handle_file_upload(self):
-        """Callback function to process files when the uploader changes."""
         uploaded_files = st.session_state.get("file_uploader_key", [])
-        st.session_state.analysis_data = self.process_and_merge_files(uploaded_files)
-        # Reset mapping whenever files are changed
-        st.session_state.metric_mapping = {}
+        if uploaded_files: ### CHANGE ###: Check if there are files to process
+            st.session_state.analysis_data = self.process_and_merge_files(uploaded_files)
+            st.session_state.metric_mapping = {}
+        else: ### CHANGE ###: Clear data if all files are removed
+            st.session_state.analysis_data = None
+            st.session_state.metric_mapping = {}
 
     def run(self):
         self.render_sidebar()
@@ -326,7 +322,7 @@ class DashboardApp:
 
     def render_sidebar(self):
         st.sidebar.title("📂 Upload & Options")
-        st.sidebar.info("Upload one or more financial statements (e.g., Income, Balance Sheet). They will be automatically merged.")
+        st.sidebar.info("Upload one or more financial statements. They will be automatically merged.")
         
         st.sidebar.file_uploader(
             "Upload Financials (HTML/XLSX)",
@@ -343,6 +339,7 @@ class DashboardApp:
             self._render_metric_mapper()
 
     def _render_metric_mapper(self):
+        # ... (No changes here)
         with st.sidebar.expander("📊 Metric Mapping for Analysis", expanded=False):
             st.info("Map metrics from your files to standard names for advanced analysis.")
             all_req_metrics = sorted(list(set(m for v in REQUIRED_METRICS.values() for m in v)))
@@ -360,8 +357,7 @@ class DashboardApp:
                     index= (available_metrics.index(current_mapping[std_metric]) + 1) if std_metric in current_mapping and current_mapping[std_metric] in available_metrics else 0,
                     key=f"map_{std_metric}"
                 )
-    
-    # --- Main Panel Rendering (no major changes, they adapt to the new data structure) ---
+
 
     def render_main_panel(self):
         st.markdown("<div class='main-header'>💹 Advanced Financial Dashboard</div>", unsafe_allow_html=True)
@@ -369,10 +365,20 @@ class DashboardApp:
             st.info("👋 Welcome! Please upload one or more financial data files to begin.")
             return
 
-        data, df = st.session_state.analysis_data, st.session_state.analysis_data["statement"]
+        data = st.session_state.analysis_data
+        df = data["statement"]
+        
+        ### CHANGE ###: Re-create the DataQualityMetrics object from the dictionary
+        dq_dict = data["data_quality"]
+        dq = DataQualityMetrics(
+            total_rows=dq_dict['total_rows'],
+            missing_values=dq_dict['missing_values'],
+            missing_percentage=dq_dict['missing_percentage'],
+            duplicate_rows=dq_dict['duplicate_rows']
+        )
+        
         st.subheader(f"Company Analysis: {data['company_name']}")
         if st.session_state.show_data_quality:
-            dq = data["data_quality"]
             qc = f"quality-{dq.quality_score.lower()}"
             st.markdown(f"""<div class="feature-card"><h4><span class="data-quality-indicator {qc}"></span>Merged Data Quality: {dq.quality_score}</h4>
             Total Unique Rows: {dq.total_rows} | Total Missing Values: {dq.missing_values} ({dq.missing_percentage:.2f}%)</div>""", unsafe_allow_html=True)
@@ -383,6 +389,8 @@ class DashboardApp:
         with tab_data: self._render_data_table_tab(df)
         with tab_adv: self._render_advanced_analysis_tab(df)
 
+    # --- Other rendering methods remain the same ---
+    # ... (No changes in _get_mapped_df, _render_advanced_analysis_tab, etc.)
     def _get_mapped_df(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
         mapping = {v: k for k, v in st.session_state.metric_mapping.items() if v}
         if not mapping:
@@ -466,6 +474,7 @@ class DashboardApp:
     def _render_data_table_tab(self, df: pd.DataFrame):
         st.subheader("Merged and Cleaned Financial Data")
         st.dataframe(df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
+
 
 # --- 7. App Execution ---
 if __name__ == "__main__":
