@@ -15,6 +15,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 # --- 2. Configuration ---
 # Suppress warnings for a cleaner user interface
@@ -91,7 +92,7 @@ class DataQualityMetrics:
 class FileValidator:
     """Validates the uploaded file based on size and type."""
     @staticmethod
-    def validate_file(uploaded_file: st.runtime.uploaded_file_manager.UploadedFile) -> Tuple[bool, str]:
+    def validate_file(uploaded_file: UploadedFile) -> Tuple[bool, str]:
         if uploaded_file is None:
             return False, "No file uploaded. Please upload a file in the sidebar."
         if uploaded_file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
@@ -222,7 +223,7 @@ class ChartGenerator:
 # --- 5. Core Application Logic ---
 
 @st.cache_data(show_spinner="Parsing and analyzing your file...")
-def parse_financial_file(uploaded_file: st.runtime.uploaded_file_manager.UploadedFile) -> Optional[Dict[str, Any]]:
+def parse_financial_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
     if uploaded_file is None: return None
     is_valid, file_info = FileValidator.validate_file(uploaded_file)
     if not is_valid:
@@ -370,6 +371,12 @@ class DashboardApp:
 # --- 6. App Execution ---
 if __name__ == "__main__":
     try:
+        # The UploadedFile class is defined within streamlit.runtime.uploaded_file_manager,
+        # but for type hinting, we can import a placeholder from a more stable path
+        # if needed, or simply use the full path as done here.
+        # This check is mostly for clarity and doesn't affect runtime.
+        from streamlit.runtime.uploaded_file_manager import UploadedFile
+        
         app = DashboardApp()
         app.run()
     except Exception as e:
