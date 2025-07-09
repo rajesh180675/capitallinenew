@@ -53,10 +53,7 @@ st.markdown("""
 # --- 4. Data Structures and Basic Classes ---
 @dataclass
 class DataQualityMetrics:
-    total_rows: int
-    missing_values: int
-    missing_percentage: float
-    duplicate_rows: int
+    total_rows: int; missing_values: int; missing_percentage: float; duplicate_rows: int
     quality_score: str = field(init=False)
     def __post_init__(self):
         if self.missing_percentage < 5: self.quality_score = "High"
@@ -172,7 +169,10 @@ class PenmanNissimAnalyzer:
         noa = operating_assets - operating_liabilities
         nfo = financial_liabilities - financial_assets
         
-        validation_check = np.allclose(noa - nfo, equity, nan_policy='omit')
+        # Manual handling of NaNs for np.allclose compatibility with older NumPy versions
+        check_series = noa - nfo
+        valid_mask = np.isfinite(check_series) & np.isfinite(equity)
+        validation_check = np.allclose(check_series[valid_mask], equity[valid_mask])
         
         reformulated_bs = pd.DataFrame({
             'Operating Assets (OA)': operating_assets, 'Financial Assets (FA)': financial_assets,
@@ -299,14 +299,7 @@ class DashboardApp:
         df = data["statement"]
         
         dq_dict = data["data_quality"]
-        # Create a new dictionary containing only the expected init arguments
-        init_args = {
-            'total_rows': dq_dict['total_rows'],
-            'missing_values': dq_dict['missing_values'],
-            'missing_percentage': dq_dict['missing_percentage'],
-            'duplicate_rows': dq_dict['duplicate_rows']
-        }
-        # Create the object using the filtered arguments.
+        init_args = { 'total_rows': dq_dict['total_rows'], 'missing_values': dq_dict['missing_values'], 'missing_percentage': dq_dict['missing_percentage'], 'duplicate_rows': dq_dict['duplicate_rows']}
         dq = DataQualityMetrics(**init_args)
         
         st.subheader(f"Company Analysis: {data['company_name']}")
@@ -318,14 +311,10 @@ class DashboardApp:
         tabs = ["📊 Primary Visualizations", "📄 Merged Data Table", "💡 Advanced Analysis", "🔍 Penman-Nissim Analysis"]
         tab_viz, tab_data, tab_adv, tab_pn = st.tabs(tabs)
         
-        with tab_viz:
-            self._render_primary_visualization_tab(df)
-        with tab_data:
-            self._render_data_table_tab(df)
-        with tab_adv:
-            self._render_advanced_analysis_tab(df)
-        with tab_pn:
-            self._render_penman_nissim_tab(df)
+        with tab_viz: self._render_primary_visualization_tab(df)
+        with tab_data: self._render_data_table_tab(df)
+        with tab_adv: self._render_advanced_analysis_tab(df)
+        with tab_pn: self._render_penman_nissim_tab(df)
 
     def _render_data_table_tab(self, df: pd.DataFrame):
         st.subheader("Merged and Cleaned Financial Data")
