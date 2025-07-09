@@ -92,45 +92,34 @@ class FileValidator:
     """Validates the uploaded file based on size and type."""
     @staticmethod
     def validate_file(uploaded_file: st.runtime.uploaded_file_manager.UploadedFile) -> Tuple[bool, str]:
-        """
-        Validates the uploaded file.
-        Returns: A tuple (is_valid: bool, message: str).
-        """
         if uploaded_file is None:
             return False, "No file uploaded. Please upload a file in the sidebar."
         if uploaded_file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
             return False, f"File size exceeds the {MAX_FILE_SIZE_MB}MB limit."
-        
         file_extension = uploaded_file.name.split('.')[-1].lower()
         if file_extension not in ALLOWED_FILE_TYPES:
             return False, f"Unsupported file type: '.{file_extension}'. Please upload one of {ALLOWED_FILE_TYPES}."
-        
         return True, file_extension
 
 class DataProcessor:
     """Handles data cleaning, transformation, and analysis."""
     @staticmethod
     def clean_numeric_data(df: pd.DataFrame) -> pd.DataFrame:
-        """Converts object columns to numeric, removing currency symbols and parentheses."""
         for col in df.columns:
             if pd.api.types.is_object_dtype(df[col]):
-                # Regex to remove currency symbols, commas, and handle negative numbers in parentheses
                 df[col] = df[col].astype(str).str.replace(r'[,\(\)₹]|Rs\.', '', regex=True)
             df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
 
     @staticmethod
     def detect_outliers(df: pd.DataFrame) -> Dict[str, List[int]]:
-        """Detects outliers in numeric columns using the IQR method."""
         outliers = {}
         numeric_df = df.select_dtypes(include=np.number)
         for col in numeric_df.columns:
-            Q1 = numeric_df[col].quantile(0.25)
-            Q3 = numeric_df[col].quantile(0.75)
+            Q1, Q3 = numeric_df[col].quantile(0.25), numeric_df[col].quantile(0.75)
             IQR = Q3 - Q1
             if IQR > 0:
-                lower_bound = Q1 - 1.5 * IQR
-                upper_bound = Q3 + 1.5 * IQR
+                lower_bound, upper_bound = Q1 - 1.5 * IQR, Q3 + 1.5 * IQR
                 outlier_indices = numeric_df[(numeric_df[col] < lower_bound) | (numeric_df[col] > upper_bound)].index.tolist()
                 if outlier_indices:
                     outliers[col] = outlier_indices
@@ -138,71 +127,85 @@ class DataProcessor:
 
     @staticmethod
     def calculate_data_quality(df: pd.DataFrame) -> DataQualityMetrics:
-        """Calculates and returns a DataQualityMetrics object for a DataFrame."""
         total_cells = df.size
         if total_cells == 0:
             return DataQualityMetrics(total_rows=0, missing_values=0, missing_percentage=0.0, duplicate_rows=0)
-        
         missing_values = df.isnull().sum().sum()
         missing_percentage = (missing_values / total_cells) * 100 if total_cells > 0 else 0
-        
         return DataQualityMetrics(
-            total_rows=len(df),
-            missing_values=int(missing_values),
-            missing_percentage=missing_percentage,
-            duplicate_rows=int(df.duplicated().sum())
+            total_rows=len(df), missing_values=int(missing_values),
+            missing_percentage=missing_percentage, duplicate_rows=int(df.duplicated().sum())
         )
+
+    # --- NEW: Function to normalize data to a base of 100 ---
+    @staticmethod
+    def normalize_to_100(df: pd.DataFrame, metrics: List[str]) -> pd.DataFrame:
+        """Normalizes selected rows of a DataFrame to a base of 100."""
+        df_scaled = df.loc[metrics].copy()
+        for metric in metrics:
+            series = df_scaled.loc[metric].dropna()
+            if not series.empty:
+                base_value = series.iloc[0]
+                if base_value != 0:
+                    df_scaled.loc[metric] = (df_scaled.loc[metric] / base_value) * 100
+                else:
+                    df_scaled.loc[metric] = np.nan
+        return df_scaled
 
 class ChartGenerator:
     """A factory for creating various Plotly charts."""
     
+    # --- UPDATED: To accept custom y-axis title ---
     @staticmethod
-    def _create_base_figure(title: str, theme: str, show_grid: bool) -> go.Figure:
-        """Creates a base Plotly figure with common layout settings."""
+    def _create_base_figure(title: str, theme: str, show_grid: bool, yaxis_title: str) -> go.Figure:
         fig = go.Figure()
         fig.update_layout(
             title={'text': title, 'font': {'size': 20}, 'x': 0.5},
             xaxis_title="Year",
-            yaxis_title="Amount (₹ Cr.)",
-            template=theme,
-            height=500,
-            hovermode='x unified',
-            xaxis={'showgrid': show_grid},
-            yaxis={'showgrid': show_grid},
+            yaxis_title=yaxis_title, # Use the provided title
+            template=theme, height=500, hovermode='x unified',
+            xaxis={'showgrid': show_grid}, yaxis={'showgrid': show_grid},
             legend_title_text='Metrics'
         )
         return fig
 
+    # --- UPDATED: All chart functions now accept scale_type and yaxis_title ---
     @staticmethod
-    def create_line_chart(df: pd.DataFrame, metrics: List[str], title: str, theme: str, show_grid: bool) -> go.Figure:
-        fig = ChartGenerator._create_base_figure(title, theme, show_grid)
+    def create_line_chart(df: pd.DataFrame, metrics: List[str], title: str, theme: str, show_grid: bool, scale_type: str, yaxis_title: str) -> go.Figure:
+        fig = ChartGenerator._create_base_figure(title, theme, show_grid, yaxis_title)
         colors = px.colors.qualitative.Plotly
         for i, metric in enumerate(metrics):
             fig.add_trace(go.Scatter(x=df.columns, y=df.loc[metric], mode='lines+markers', name=metric,
                                      line={'color': colors[i % len(colors)], 'width': 3}))
         fig.update_xaxes(categoryorder='array', categoryarray=df.columns)
+        if scale_type == 'Logarithmic':
+            fig.update_layout(yaxis_type='log')
         return fig
 
     @staticmethod
-    def create_bar_chart(df: pd.DataFrame, metrics: List[str], title: str, theme: str, show_grid: bool) -> go.Figure:
-        fig = ChartGenerator._create_base_figure(title, theme, show_grid)
+    def create_bar_chart(df: pd.DataFrame, metrics: List[str], title: str, theme: str, show_grid: bool, scale_type: str, yaxis_title: str) -> go.Figure:
+        fig = ChartGenerator._create_base_figure(title, theme, show_grid, yaxis_title)
         fig.update_layout(barmode='group')
         colors = px.colors.qualitative.Plotly
         for i, metric in enumerate(metrics):
             fig.add_trace(go.Bar(x=df.columns, y=df.loc[metric], name=metric,
                                  marker_color=colors[i % len(colors)]))
         fig.update_xaxes(categoryorder='array', categoryarray=df.columns)
+        if scale_type == 'Logarithmic':
+            fig.update_layout(yaxis_type='log')
         return fig
 
     @staticmethod
-    def create_area_chart(df: pd.DataFrame, metrics: List[str], title: str, theme: str, show_grid: bool) -> go.Figure:
-        fig = ChartGenerator._create_base_figure(title, theme, show_grid)
+    def create_area_chart(df: pd.DataFrame, metrics: List[str], title: str, theme: str, show_grid: bool, scale_type: str, yaxis_title: str) -> go.Figure:
+        fig = ChartGenerator._create_base_figure(title, theme, show_grid, yaxis_title)
         colors = px.colors.qualitative.Plotly
         for i, metric in enumerate(metrics):
             fig.add_trace(go.Scatter(x=df.columns, y=df.loc[metric], mode='lines', name=metric,
                                      fill='tonexty' if i > 0 else 'tozeroy',
                                      line={'color': colors[i % len(colors)]}))
         fig.update_xaxes(categoryorder='array', categoryarray=df.columns)
+        if scale_type == 'Logarithmic':
+            fig.update_layout(yaxis_type='log')
         return fig
 
     @staticmethod
@@ -210,15 +213,9 @@ class ChartGenerator:
         if len(metrics) < 2:
             st.warning("Heatmap requires at least two metrics for correlation.")
             return None
-        
         corr_matrix = df.loc[metrics].T.corr()
-        fig = go.Figure(data=go.Heatmap(
-            z=corr_matrix.values,
-            x=corr_matrix.columns,
-            y=corr_matrix.columns,
-            colorscale='RdBu_r',  # Reversed Red-Blue for intuitive correlation
-            zmid=0
-        ))
+        fig = go.Figure(data=go.Heatmap(z=corr_matrix.values, x=corr_matrix.columns, y=corr_matrix.columns,
+                                        colorscale='RdBu_r', zmid=0))
         fig.update_layout(title={'text': title, 'font': {'size': 20}, 'x': 0.5}, template=theme, height=500)
         return fig
 
@@ -226,215 +223,144 @@ class ChartGenerator:
 
 @st.cache_data(show_spinner="Parsing and analyzing your file...")
 def parse_financial_file(uploaded_file: st.runtime.uploaded_file_manager.UploadedFile) -> Optional[Dict[str, Any]]:
-    """
-    Parses an uploaded Capitaline file, extracts data, and performs initial analysis.
-    This version creates unique identifiers for metrics with duplicate names.
-    """
-    if uploaded_file is None:
-        return None
-    
+    if uploaded_file is None: return None
     is_valid, file_info = FileValidator.validate_file(uploaded_file)
     if not is_valid:
         st.error(file_info)
         return None
-
     try:
         content = uploaded_file.getvalue()
         df = pd.read_html(io.BytesIO(content), header=[0, 1])[0]
-
-        # --- Data Extraction and Cleaning ---
         company_name = "Unknown Company"
         try:
             header_str = str(df.columns[0][0])
-            if ">>" in header_str:
-                company_name = header_str.split(">>")[2].split("(")[0].strip()
-        except IndexError:
-            logger.warning("Could not parse company name from header.")
-
-        # Flatten multi-index columns and rename the first column to "Metric"
+            if ">>" in header_str: company_name = header_str.split(">>")[2].split("(")[0].strip()
+        except IndexError: logger.warning("Could not parse company name from header.")
         df.columns = [str(col[1]) for col in df.columns]
         df = df.rename(columns={df.columns[0]: "Metric"}).dropna(subset=["Metric"])
-        
-        # --- FIX: Create a unique index to handle duplicate metric names ---
-        # Reset index to ensure it's a clean 0, 1, 2... sequence for referencing
         df = df.reset_index(drop=True)
-        
-        # Find which 'Metric' names appear more than once
         is_duplicate = df.duplicated(subset=['Metric'], keep=False)
-        
-        # Create a new column for the unique index. Default to the original name.
         df['unique_metric_id'] = df['Metric']
-        
-        # For the duplicated rows, append the row number to make the name unique
-        # e.g., "Other Income" at row 23 becomes "Other Income (row 24)"
         df.loc[is_duplicate, 'unique_metric_id'] = df['Metric'] + ' (row ' + (df.index + 1).astype(str) + ')'
-        
-        # Set this new unique column as the DataFrame's index
-        df = df.set_index('unique_metric_id')
-        # We can now drop the original 'Metric' column as it's redundant
-        df = df.drop(columns=['Metric'])
-        # --- End of fix ---
-
-        # Identify and rename year columns using regex for robustness
+        df = df.set_index('unique_metric_id').drop(columns=['Metric'])
         year_cols_map = {col: YEAR_REGEX.search(col).group(0) for col in df.columns if YEAR_REGEX.search(col)}
         df = df.rename(columns=year_cols_map)
-
-        # Sort years as integers to ensure correct chronological order
         year_columns = sorted([col for col in df.columns if col.isdigit()], key=int)
         if not year_columns:
-            st.error("No valid year columns (e.g., '2023', '2022') were found in the file.")
+            st.error("No valid year columns found.")
             return None
-
-        # Reorder the DataFrame based on the correctly sorted years
         df_processed = df[year_columns].copy()
         df_processed = DataProcessor.clean_numeric_data(df_processed).dropna(how='all')
-
-        return {
-            "statement": df_processed,
-            "company_name": company_name,
-            "data_quality": DataProcessor.calculate_data_quality(df_processed),
-            "outliers": DataProcessor.detect_outliers(df_processed),
-            "year_columns": year_columns,
-            "file_info": {"name": uploaded_file.name, "size": uploaded_file.size, "type": file_info}
-        }
+        return {"statement": df_processed, "company_name": company_name, "data_quality": DataProcessor.calculate_data_quality(df_processed),
+                "outliers": DataProcessor.detect_outliers(df_processed), "year_columns": year_columns,
+                "file_info": {"name": uploaded_file.name, "size": uploaded_file.size, "type": file_info}}
     except Exception as e:
         logger.error(f"Error parsing file '{uploaded_file.name}': {e}", exc_info=True)
         st.error(f"An unexpected error occurred while parsing the file. Please check if the file format is correct. Error: {e}")
         return None
 
 class DashboardApp:
-    """Encapsulates the entire Streamlit dashboard UI and state management."""
-
     def __init__(self):
-        """Initializes the app and its session state."""
         self._initialize_state()
-        # Map chart names to their generator functions for clean, dynamic dispatch
-        self.CHART_BUILDERS = {
-            "Line Chart": ChartGenerator.create_line_chart,
-            "Bar Chart": ChartGenerator.create_bar_chart,
-            "Area Chart": ChartGenerator.create_area_chart,
-            "Heatmap": ChartGenerator.create_heatmap,
-        }
+        self.CHART_BUILDERS = {"Line Chart": ChartGenerator.create_line_chart, "Bar Chart": ChartGenerator.create_bar_chart,
+                               "Area Chart": ChartGenerator.create_area_chart, "Heatmap": ChartGenerator.create_heatmap}
 
     def _initialize_state(self):
-        """Sets up the default session state values."""
-        defaults = {
-            "analysis_data": None,
-            "uploaded_file_id": None,
-        }
+        defaults = {"analysis_data": None, "uploaded_file_id": None}
         for key, value in defaults.items():
-            if key not in st.session_state:
-                st.session_state[key] = value
+            if key not in st.session_state: st.session_state[key] = value
 
     def run(self):
-        """Main method to render the entire dashboard."""
         self.render_sidebar()
         self.render_main_panel()
 
     def render_sidebar(self):
-        """Renders the sidebar for file uploads and display options."""
         st.sidebar.title("📂 Upload & Options")
-        uploaded_file = st.sidebar.file_uploader(
-            "Upload a Capitaline File",
-            type=ALLOWED_FILE_TYPES
-        )
-
-        # Process file only if it's new
+        uploaded_file = st.sidebar.file_uploader("Upload a Capitaline File", type=ALLOWED_FILE_TYPES)
         if uploaded_file and uploaded_file.file_id != st.session_state.get("uploaded_file_id"):
             st.session_state.uploaded_file_id = uploaded_file.file_id
             st.session_state.analysis_data = parse_financial_file(uploaded_file)
-        
         st.sidebar.title("⚙️ Display Settings")
         st.sidebar.checkbox("Show Data Quality Info", key="show_data_quality")
         st.sidebar.checkbox("Show Outlier Summary", key="show_outliers")
 
     def render_main_panel(self):
-        """Renders the main content area of the dashboard."""
         st.markdown("<div class='main-header'>📊 Financial Analysis Dashboard</div>", unsafe_allow_html=True)
-
         if not st.session_state.analysis_data:
             st.info("👋 Welcome! Please upload a financial data file using the sidebar to begin analysis.")
             return
-
         data = st.session_state.analysis_data
         df = data["statement"]
-        
         st.subheader(f"Company Analysis: {data['company_name']}")
-
-        # --- Display Data Quality and Outlier Information ---
         self._display_metadata(data)
-
-        # --- Create tabs for visualizations and data table ---
         tab_viz, tab_data = st.tabs(["📊 Visualizations", "📄 Data Table"])
-
-        with tab_viz:
-            self._render_visualization_tab(df)
-            
-        with tab_data:
-            self._render_data_table_tab(df)
+        with tab_viz: self._render_visualization_tab(df)
+        with tab_data: self._render_data_table_tab(df)
 
     def _render_visualization_tab(self, df: pd.DataFrame):
-        """Renders the content for the visualization tab."""
         st.header("Financial Charts")
-        
         available_metrics = df.index.tolist()
         
-        col1, col2, col3 = st.columns([3, 2, 2])
+        col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
         with col1:
-            selected_metrics = st.multiselect(
-                "Select metrics to visualize:",
-                options=available_metrics,
-                default=available_metrics[:2] if available_metrics else []
-            )
+            selected_metrics = st.multiselect("Select metrics to visualize:", options=available_metrics,
+                                              default=available_metrics[:2] if len(available_metrics) > 1 else available_metrics)
         with col2:
             chart_type = st.selectbox("Select Chart Type:", self.CHART_BUILDERS.keys())
         with col3:
             theme = st.selectbox("Chart Theme:", ["plotly_white", "plotly_dark", "ggplot2"])
-
+        with col4:
+            # --- NEW: UI for Y-Axis Scaling ---
+            # Disable the scaling option if Heatmap is selected
+            is_heatmap = chart_type == 'Heatmap'
+            scale_type = st.selectbox(
+                "Y-Axis Scale:",
+                ["Linear (Default)", "Logarithmic", "Normalized (Base 100)"],
+                disabled=is_heatmap,
+                help="Logarithmic scale is useful for data with exponential growth. Normalized scale is useful for comparing the performance of different metrics from a common base."
+            )
+        
         show_grid = st.checkbox("Show Chart Gridlines", value=True)
 
         if not selected_metrics:
             st.warning("Please select at least one metric to generate a chart.")
             return
 
+        # --- NEW: Logic to prepare data and titles based on scale type ---
+        plot_df = df
+        yaxis_title = "Amount (₹ Cr.)"
+        if scale_type == "Normalized (Base 100)" and not is_heatmap:
+            plot_df = DataProcessor.normalize_to_100(df, selected_metrics)
+            yaxis_title = "Normalized Value (Base 100)"
+
         chart_builder = self.CHART_BUILDERS[chart_type]
         fig = chart_builder(
-            df=df,
+            df=plot_df,  # Use the potentially scaled dataframe
             metrics=selected_metrics,
             title=f"{chart_type} of Selected Financials",
             theme=theme,
-            show_grid=show_grid
+            show_grid=show_grid,
+            scale_type=scale_type, # Pass the scale type to the builder
+            yaxis_title=yaxis_title # Pass the correct axis title
         )
         
         if fig:
             st.plotly_chart(fig, use_container_width=True)
-            
+
     def _render_data_table_tab(self, df: pd.DataFrame):
-        """Renders the content for the data table tab."""
         st.header("Financial Data")
         st.info("This table shows the cleaned financial data used for the visualizations.")
-        
-        # Format the dataframe for better readability
         formatted_df = df.style.format("{:,.2f}", na_rep="-")
-        
         st.dataframe(formatted_df, use_container_width=True)
 
     def _display_metadata(self, data: Dict[str, Any]):
-        """Displays the data quality and outlier cards if toggled."""
         if st.session_state.show_data_quality:
             dq = data["data_quality"]
             quality_class = f"quality-{dq.quality_score.lower()}"
-            st.markdown(f"""
-                <div class="feature-card">
-                    <h4><span class="data-quality-indicator {quality_class}"></span>Data Quality: {dq.quality_score}</h4>
-                    <ul>
+            st.markdown(f"""<div class="feature-card"><h4><span class="data-quality-indicator {quality_class}"></span>Data Quality: {dq.quality_score}</h4><ul>
                         <li><b>Total Rows:</b> {dq.total_rows}</li>
                         <li><b>Missing Values:</b> {dq.missing_values} ({dq.missing_percentage:.2f}%)</li>
-                        <li><b>Duplicate Rows:</b> {dq.duplicate_rows}</li>
-                    </ul>
-                </div>
-            """, unsafe_allow_html=True)
-
+                        <li><b>Duplicate Rows:</b> {dq.duplicate_rows}</li></ul></div>""", unsafe_allow_html=True)
         if st.session_state.show_outliers and data["outliers"]:
             st.markdown("<div class='feature-card'><h4>Outlier Summary (by metric)</h4>", unsafe_allow_html=True)
             for metric, indices in data["outliers"].items():
