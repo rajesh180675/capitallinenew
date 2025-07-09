@@ -1,13 +1,13 @@
 # Enhanced Financial Dashboard - Complete Integrated Version
-# A robust Streamlit application for financial data analysis with enhanced error handling,
-# performance optimization, and advanced analytical features including multi-file support.
+# A robust Streamlit application for financial data analysis with advanced analytical features,
+# multi-file support, and integrated visualization of calculated metrics.
 
 # --- 1. Imports and Setup ---
 import io
 import logging
 import re
 import warnings
-from dataclasses import dataclass, field, asdict ### CHANGE ###: Import asdict
+from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -19,7 +19,6 @@ from sklearn.linear_model import LinearRegression
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 # --- 2. Configuration ---
-# ... (No changes here)
 warnings.filterwarnings('ignore')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -38,16 +37,13 @@ REQUIRED_METRICS = {
     'Growth & Trends': ['Revenue', 'Net Profit', 'EBIT']
 }
 
-
 # --- 3. Page and Style Configuration ---
-# ... (No changes here)
 st.set_page_config(
     page_title="Advanced Financial Dashboard",
     page_icon="💹",
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 st.markdown("""
 <style>
     .main-header { font-size: 2.5rem; font-weight: bold; color: #1f77b4; text-align: center; margin-bottom: 1rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.1); }
@@ -62,9 +58,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
 # --- 4. Data Structures and Basic Classes ---
-# ... (No changes in these class definitions)
 @dataclass
 class DataQualityMetrics:
     total_rows: int; missing_values: int; missing_percentage: float; duplicate_rows: int
@@ -75,7 +69,6 @@ class DataQualityMetrics:
         else: self.quality_score = "Low"
 
 class FileValidator:
-    # ... (No changes)
     @staticmethod
     def validate_file(uploaded_file: UploadedFile) -> Tuple[bool, str]:
         if uploaded_file is None: return False, "No file uploaded."
@@ -85,7 +78,6 @@ class FileValidator:
         return True, ext
 
 class DataProcessor:
-    # ... (No changes)
     @staticmethod
     def clean_numeric_data(df: pd.DataFrame) -> pd.DataFrame:
         for col in df.columns:
@@ -111,13 +103,14 @@ class DataProcessor:
             else:
                 df_scaled.loc[metric] = np.nan
         return df_scaled
-# ... (Rest of classes are unchanged)
+
 class ChartGenerator:
     @staticmethod
     def _create_base_figure(title, theme, show_grid, yaxis_title):
         fig = go.Figure()
         fig.update_layout(title={'text': title, 'x': 0.5}, xaxis_title="Year", yaxis_title=yaxis_title, template=theme, height=500, hovermode='x unified', xaxis={'showgrid': show_grid}, yaxis={'showgrid': show_grid}, legend_title_text='Metrics')
         return fig
+
     @staticmethod
     def create_line_chart(df, metrics, title, theme, show_grid, scale_type, yaxis_title):
         fig = ChartGenerator._create_base_figure(title, theme, show_grid, yaxis_title)
@@ -125,19 +118,15 @@ class ChartGenerator:
             fig.add_trace(go.Scatter(x=df.columns, y=df.loc[metric], mode='lines+markers', name=metric))
         if scale_type == 'Logarithmic': fig.update_layout(yaxis_type='log')
         return fig
+
     @staticmethod
     def create_bar_chart(df, metrics, title, theme, show_grid, scale_type, yaxis_title):
         fig = ChartGenerator._create_base_figure(title, theme, show_grid, yaxis_title)
         for metric in metrics: fig.add_trace(go.Bar(x=df.columns, y=df.loc[metric], name=metric))
         if scale_type == 'Logarithmic': fig.update_layout(yaxis_type='log')
         return fig
-    @staticmethod
-    def create_heatmap(df, metrics, title, theme, **kwargs):
-        if len(metrics) < 2:
-            st.warning("Heatmap requires at least two metrics.")
-            return None
-        corr = df.loc[metrics].T.corr()
-        return go.Figure(data=go.Heatmap(z=corr.values, x=corr.columns, y=corr.columns, colorscale='RdBu_r', zmid=0)).update_layout(title={'text': title, 'x': 0.5}, template=theme)
+
+# --- 5. Advanced Financial Analysis Modules ---
 class FinancialRatioCalculator:
     @staticmethod
     def calculate_all_ratios(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
@@ -172,36 +161,7 @@ class FinancialRatioCalculator:
             lev_ratios['Interest Coverage'] = ebit / ie
         if not lev_ratios.empty: ratios['Leverage'] = lev_ratios.T.dropna(how='all')
         return ratios
-class GrowthAnalyzer:
-    @staticmethod
-    def calculate_cagr(df: pd.DataFrame, metrics: List[str]) -> pd.DataFrame:
-        results = {}
-        for metric in metrics:
-            if metric in df.index and not df.loc[metric].dropna().empty:
-                series = df.loc[metric].dropna()
-                if len(series) >= 2 and series.iloc[0] > 0:
-                    years = len(series) - 1
-                    cagr = ((series.iloc[-1] / series.iloc[0]) ** (1/years) - 1) * 100
-                    results[metric] = {'CAGR %': cagr, 'Start Value': series.iloc[0], 'End Value': series.iloc[-1], 'Years': years}
-        return pd.DataFrame(results).T
-class TrendAnalyzer:
-    @staticmethod
-    def forecast_metrics(df: pd.DataFrame, metrics: List[str], periods: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        forecasts, stats = pd.DataFrame(), pd.DataFrame()
-        X = df.columns.astype(int).values.reshape(-1, 1)
-        for metric in metrics:
-            if metric in df.index:
-                y = df.loc[metric].values
-                mask = ~np.isnan(y)
-                if mask.sum() >= 3:
-                    model = LinearRegression().fit(X[mask], y[mask])
-                    r2 = model.score(X[mask], y[mask])
-                    future_X = np.arange(X.max() + 1, X.max() + 1 + periods).reshape(-1, 1)
-                    preds = model.predict(future_X)
-                    for i, year in enumerate(future_X.flatten()):
-                        forecasts.loc[metric, str(year)] = preds[i]
-                    stats.loc[metric, ['R-squared', 'Trend']] = [r2, 'Increasing' if model.coef_[0] > 0 else 'Decreasing']
-        return forecasts, stats
+
 class DuPontAnalyzer:
     @staticmethod
     def calculate_dupont(df: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -213,6 +173,7 @@ class DuPontAnalyzer:
         dupont['Equity Multiplier'] = df.loc['Total Assets'] / df.loc['Total Equity']
         dupont['ROE (DuPont) %'] = (dupont['Net Margin %'] * dupont['Asset Turnover'] * dupont['Equity Multiplier']) / 100
         return dupont.T
+
 class CashFlowAnalyzer:
     @staticmethod
     def calculate_fcf_metrics(df: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -226,9 +187,7 @@ class CashFlowAnalyzer:
         return metrics.T
 
 # --- 6. Core Application Logic ---
-
 def parse_single_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
-    # ... (No changes here)
     if not FileValidator.validate_file(uploaded_file)[0]: return None
     try:
         df = pd.read_html(io.BytesIO(uploaded_file.getvalue()), header=[0, 1])[0]
@@ -239,18 +198,15 @@ def parse_single_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
         
         df.columns = [str(c[1]) for c in df.columns]
         df = df.rename(columns={df.columns[0]: "Metric"}).dropna(subset=["Metric"]).reset_index(drop=True)
-        
         is_duplicate = df.duplicated(subset=['Metric'], keep=False)
         df['unique_metric_id'] = df['Metric']
         df.loc[is_duplicate, 'unique_metric_id'] = df['Metric'] + ' (row ' + (df.index + 2).astype(str) + ')'
         df = df.set_index('unique_metric_id').drop(columns=['Metric'])
-
         year_cols = {c: YEAR_REGEX.search(c).group(0) for c in df.columns if YEAR_REGEX.search(c)}
         df = df.rename(columns=year_cols)
         valid_years = sorted([c for c in df.columns if c.isdigit()], key=int)
         
         if not valid_years: return None
-        
         df_proc = DataProcessor.clean_numeric_data(df[valid_years].copy()).dropna(how='all')
         return {"statement": df_proc, "company_name": company_name}
     except Exception as e:
@@ -261,60 +217,40 @@ def parse_single_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
 class DashboardApp:
     def __init__(self):
         self._initialize_state()
-        self.chart_builders = {"Line": ChartGenerator.create_line_chart, "Bar": ChartGenerator.create_bar_chart, "Heatmap": ChartGenerator.create_heatmap}
+        self.chart_builders = {"Line": ChartGenerator.create_line_chart, "Bar": ChartGenerator.create_bar_chart}
 
     def _initialize_state(self):
         defaults = {"analysis_data": None, "metric_mapping": {}}
         for k, v in defaults.items():
             if k not in st.session_state: st.session_state[k] = v
 
-    ### CHANGE ###: The function signature and return type are modified.
     @st.cache_data(show_spinner="Processing and merging files...")
     def process_and_merge_files(_self, uploaded_files: List[UploadedFile]) -> Optional[Dict[str, Any]]:
-        """Processes a list of uploaded files, merges them, and returns a single analysis dictionary."""
-        if not uploaded_files:
-            return None
-
+        if not uploaded_files: return None
         all_dfs = []
         company_name = "Multiple Sources"
-        first_company_name_found = False
-
+        first_found = False
         for file in uploaded_files:
-            parsed_data = parse_single_file(file)
-            if parsed_data:
-                all_dfs.append(parsed_data["statement"])
-                if not first_company_name_found and parsed_data["company_name"] != "Unknown Company":
-                    company_name = parsed_data["company_name"]
-                    first_company_name_found = True
-
+            parsed = parse_single_file(file)
+            if parsed:
+                all_dfs.append(parsed["statement"])
+                if not first_found and parsed["company_name"] != "Unknown Company":
+                    company_name = parsed["company_name"]
+                    first_found = True
         if not all_dfs:
-            st.error("None of the uploaded files could be parsed. Please check the file formats.")
+            st.error("None of the uploaded files could be parsed.")
             return None
-
         merged_df = pd.concat(all_dfs, axis=0)
         merged_df = merged_df[~merged_df.index.duplicated(keep='first')]
-        
         year_cols = sorted([col for col in merged_df.columns if col.isdigit()], key=int)
         merged_df = merged_df[year_cols]
-
-        # Calculate data quality metrics and convert the object to a dictionary
-        data_quality_obj = DataProcessor.calculate_data_quality(merged_df)
-        data_quality_dict = asdict(data_quality_obj) ### CHANGE ###
-
-        return {
-            "statement": merged_df,
-            "company_name": company_name,
-            "data_quality": data_quality_dict  # Return a dictionary, not an object
-        }
+        dq_obj = DataProcessor.calculate_data_quality(merged_df)
+        return {"statement": merged_df, "company_name": company_name, "data_quality": asdict(dq_obj)}
 
     def _handle_file_upload(self):
-        uploaded_files = st.session_state.get("file_uploader_key", [])
-        if uploaded_files: ### CHANGE ###: Check if there are files to process
-            st.session_state.analysis_data = self.process_and_merge_files(uploaded_files)
-            st.session_state.metric_mapping = {}
-        else: ### CHANGE ###: Clear data if all files are removed
-            st.session_state.analysis_data = None
-            st.session_state.metric_mapping = {}
+        files = st.session_state.get("file_uploader_key", [])
+        st.session_state.analysis_data = self.process_and_merge_files(files)
+        st.session_state.metric_mapping = {}
 
     def run(self):
         self.render_sidebar()
@@ -322,60 +258,33 @@ class DashboardApp:
 
     def render_sidebar(self):
         st.sidebar.title("📂 Upload & Options")
-        st.sidebar.info("Upload one or more financial statements. They will be automatically merged.")
-        
-        st.sidebar.file_uploader(
-            "Upload Financials (HTML/XLSX)",
-            type=ALLOWED_FILE_TYPES,
-            accept_multiple_files=True,
-            key="file_uploader_key",
-            on_change=self._handle_file_upload
-        )
-        
+        st.sidebar.info("Upload one or more financial statements (e.g., Income, Balance Sheet).")
+        st.sidebar.file_uploader("Upload Financials (HTML/XLSX)", type=ALLOWED_FILE_TYPES, accept_multiple_files=True, key="file_uploader_key", on_change=self._handle_file_upload)
         st.sidebar.title("⚙️ Display Settings")
         st.sidebar.checkbox("Show Data Quality", key="show_data_quality", value=True)
-        
-        if st.session_state.analysis_data:
-            self._render_metric_mapper()
+        if st.session_state.analysis_data: self._render_metric_mapper()
 
     def _render_metric_mapper(self):
-        # ... (No changes here)
         with st.sidebar.expander("📊 Metric Mapping for Analysis", expanded=False):
-            st.info("Map metrics from your files to standard names for advanced analysis.")
+            st.info("Map metrics to standard names for advanced analysis.")
             all_req_metrics = sorted(list(set(m for v in REQUIRED_METRICS.values() for m in v)))
             available_metrics = st.session_state.analysis_data["statement"].index.tolist()
-            
             current_mapping = st.session_state.metric_mapping.copy()
             for std_metric in all_req_metrics:
                 if std_metric not in current_mapping and std_metric in available_metrics:
                     current_mapping[std_metric] = std_metric
-
             for std_metric in all_req_metrics:
-                st.session_state.metric_mapping[std_metric] = st.selectbox(
-                    f"**{std_metric}**",
-                    options=[''] + available_metrics,
-                    index= (available_metrics.index(current_mapping[std_metric]) + 1) if std_metric in current_mapping and current_mapping[std_metric] in available_metrics else 0,
-                    key=f"map_{std_metric}"
-                )
-
-
+                st.session_state.metric_mapping[std_metric] = st.selectbox(f"**{std_metric}**", options=[''] + available_metrics, index=(available_metrics.index(current_mapping[std_metric]) + 1) if std_metric in current_mapping and current_mapping[std_metric] in available_metrics else 0, key=f"map_{std_metric}")
+    
     def render_main_panel(self):
         st.markdown("<div class='main-header'>💹 Advanced Financial Dashboard</div>", unsafe_allow_html=True)
         if not st.session_state.analysis_data:
             st.info("👋 Welcome! Please upload one or more financial data files to begin.")
             return
 
-        data = st.session_state.analysis_data
-        df = data["statement"]
-        
-        ### CHANGE ###: Re-create the DataQualityMetrics object from the dictionary
+        data, df = st.session_state.analysis_data, st.session_state.analysis_data["statement"]
         dq_dict = data["data_quality"]
-        dq = DataQualityMetrics(
-            total_rows=dq_dict['total_rows'],
-            missing_values=dq_dict['missing_values'],
-            missing_percentage=dq_dict['missing_percentage'],
-            duplicate_rows=dq_dict['duplicate_rows']
-        )
+        dq = DataQualityMetrics(total_rows=dq_dict['total_rows'], missing_values=dq_dict['missing_values'], missing_percentage=dq_dict['missing_percentage'], duplicate_rows=dq_dict['duplicate_rows'])
         
         st.subheader(f"Company Analysis: {data['company_name']}")
         if st.session_state.show_data_quality:
@@ -383,82 +292,117 @@ class DashboardApp:
             st.markdown(f"""<div class="feature-card"><h4><span class="data-quality-indicator {qc}"></span>Merged Data Quality: {dq.quality_score}</h4>
             Total Unique Rows: {dq.total_rows} | Total Missing Values: {dq.missing_values} ({dq.missing_percentage:.2f}%)</div>""", unsafe_allow_html=True)
 
-        tabs = ["📊 Visualizations", "📄 Merged Data Table", "💡 Advanced Analysis"]
+        tabs = ["📊 Primary Visualizations", "📄 Merged Data Table", "💡 Advanced Analysis"]
         tab_viz, tab_data, tab_adv = st.tabs(tabs)
-        with tab_viz: self._render_visualization_tab(df)
+        with tab_viz: self._render_primary_visualization_tab(df)
         with tab_data: self._render_data_table_tab(df)
         with tab_adv: self._render_advanced_analysis_tab(df)
 
-    # --- Other rendering methods remain the same ---
-    # ... (No changes in _get_mapped_df, _render_advanced_analysis_tab, etc.)
     def _get_mapped_df(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
         mapping = {v: k for k, v in st.session_state.metric_mapping.items() if v}
         if not mapping:
             st.warning("Please map metrics in the sidebar to run advanced analysis.")
             return None
-        
-        mapped_df = df.rename(index=mapping)
-        return mapped_df
+        return df.rename(index=mapping)
 
     def _render_advanced_analysis_tab(self, df: pd.DataFrame):
         st.header("💡 Advanced Financial Analysis")
         mapped_df = self._get_mapped_df(df)
         if mapped_df is None: return
+
+        # --- NEW: Calculate all advanced metrics and combine them ---
+        all_calcs = pd.DataFrame()
         
-        with st.expander("📈 Financial Ratio Analysis", expanded=True):
-            ratios = FinancialRatioCalculator.calculate_all_ratios(mapped_df)
-            if not ratios:
-                st.info("Could not calculate ratios. Please ensure metrics for Profitability, Liquidity, and Leverage are mapped.")
+        # 1. Ratios
+        ratios = FinancialRatioCalculator.calculate_all_ratios(mapped_df)
+        if ratios:
+            ratio_df = pd.concat([df for df in ratios.values()])
+            all_calcs = pd.concat([all_calcs, ratio_df])
+
+        # 2. DuPont
+        dupont_df = DuPontAnalyzer.calculate_dupont(mapped_df)
+        if dupont_df is not None:
+            all_calcs = pd.concat([all_calcs, dupont_df])
+
+        # 3. Cash Flow
+        fcf_df = CashFlowAnalyzer.calculate_fcf_metrics(mapped_df)
+        if fcf_df is not None:
+            all_calcs = pd.concat([all_calcs, fcf_df])
+        
+        # Remove any fully empty rows that might have been created
+        all_calcs.dropna(how='all', inplace=True)
+
+        # --- NEW: Visualization Section for Calculated Metrics ---
+        if not all_calcs.empty:
+            st.subheader("Visual Analysis of Calculated Metrics")
+            
+            col1, col2, col3, col4 = st.columns([3, 1, 1, 2])
+            
+            with col1:
+                selected_metrics = st.multiselect(
+                    "Select calculated metrics to visualize:",
+                    options=all_calcs.index.unique().tolist(),
+                    default=all_calcs.index.unique().tolist()[:2] if len(all_calcs.index.unique()) >= 2 else all_calcs.index.unique().tolist()
+                )
+            with col2:
+                chart_type = st.selectbox("Chart Type:", self.chart_builders.keys(), key="adv_chart_type")
+            with col3:
+                theme = st.selectbox("Theme:", ["plotly_white", "plotly_dark"], key="adv_theme")
+            with col4:
+                scale_type = st.selectbox("Y-Axis Scale:", ["Linear", "Logarithmic", "Normalized (Base 100)"], key="adv_scale")
+            
+            if selected_metrics:
+                plot_df, y_title = all_calcs, "Value / Ratio"
+                if scale_type == "Normalized (Base 100)":
+                    plot_df = DataProcessor.normalize_to_100(all_calcs, selected_metrics)
+                    y_title = "Normalized Value (Base 100)"
+
+                chart_builder = self.chart_builders[chart_type]
+                fig = chart_builder(
+                    df=plot_df,
+                    metrics=selected_metrics,
+                    title="Calculated Metric Analysis",
+                    theme=theme,
+                    show_grid=True,
+                    scale_type=scale_type,
+                    yaxis_title=y_title
+                )
+                st.plotly_chart(fig, use_container_width=True)
             else:
+                st.info("Select one or more metrics from the dropdown to visualize them.")
+            st.markdown("---")
+
+
+        # --- Existing Display for Data Tables ---
+        with st.expander("📈 Financial Ratio Analysis (Data)", expanded=False):
+            if ratios:
                 for ratio_type, ratio_df in ratios.items():
                     st.subheader(f"{ratio_type} Ratios")
                     st.dataframe(ratio_df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
+            else:
+                st.info("Could not calculate ratios. Please ensure required metrics are mapped.")
         
-        with st.expander("🌱 Growth Analysis", expanded=False):
-            st.subheader("Compound Annual Growth Rate (CAGR)")
-            cagr_metrics = st.multiselect("Select metrics for CAGR:", mapped_df.index.tolist(), default=['Revenue', 'Net Profit'] if all(m in mapped_df.index for m in ['Revenue', 'Net Profit']) else None, key="cagr_ms")
-            if cagr_metrics:
-                cagr_results = GrowthAnalyzer.calculate_cagr(mapped_df, cagr_metrics)
-                if not cagr_results.empty:
-                    st.dataframe(cagr_results.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
-                else:
-                    st.info("Could not calculate CAGR. Ensure selected metrics have at least two years of positive data.")
-        
-        with st.expander("🔮 Trend Analysis & Forecasting", expanded=False):
-            st.subheader("Metric Forecasting")
-            col1, col2 = st.columns([3,1])
-            forecast_metrics = col1.multiselect("Select metrics to forecast:", mapped_df.index.tolist(), default=['Revenue'] if 'Revenue' in mapped_df.index else None, key="forecast_ms")
-            periods = col2.number_input("Forecast Periods (Years)", min_value=1, max_value=5, value=2)
-            if forecast_metrics:
-                forecasts, stats = TrendAnalyzer.forecast_metrics(mapped_df, forecast_metrics, periods)
-                if not forecasts.empty:
-                    st.subheader("Forecasted Values")
-                    st.dataframe(forecasts.style.format("{:,.2f}"), use_container_width=True)
-                    st.subheader("Trend Model Statistics")
-                    st.dataframe(stats.style.format({'R-squared': '{:.2%}'}), use_container_width=True)
-        
-        with st.expander("分解 DuPont Analysis (ROE Decomposition)", expanded=False):
-            dupont_df = DuPontAnalyzer.calculate_dupont(mapped_df)
+        with st.expander("分解 DuPont Analysis (Data)", expanded=False):
             if dupont_df is not None:
                 st.subheader("DuPont Analysis Components")
                 st.dataframe(dupont_df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
             else:
                 st.info("Could not perform DuPont analysis. Please map: Net Profit, Revenue, Total Assets, and Total Equity.")
         
-        with st.expander("🌊 Cash Flow Analysis", expanded=False):
-            fcf_df = CashFlowAnalyzer.calculate_fcf_metrics(mapped_df)
+        with st.expander("🌊 Cash Flow Analysis (Data)", expanded=False):
             if fcf_df is not None:
                 st.subheader("Free Cash Flow Metrics")
                 st.dataframe(fcf_df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
             else:
                 st.info("Could not perform Cash Flow analysis. Please map: Operating Cash Flow and Capital Expenditure.")
 
-    def _render_visualization_tab(self, df: pd.DataFrame):
+    def _render_primary_visualization_tab(self, df: pd.DataFrame):
+        st.header("Primary Financial Data Visualization")
         col1, col2, col3, col4 = st.columns([3, 1, 1, 2])
-        metrics = col1.multiselect("Select metrics:", df.index.tolist(), default=df.index[:2].tolist())
-        chart = col2.selectbox("Chart Type:", self.chart_builders.keys())
-        theme = col3.selectbox("Theme:", ["plotly_white", "plotly_dark"])
-        scale = col4.selectbox("Y-Axis Scale:", ["Linear", "Logarithmic", "Normalized (Base 100)"], disabled=(chart == 'Heatmap'))
+        metrics = col1.multiselect("Select metrics from uploaded files:", df.index.tolist(), default=df.index[:2].tolist())
+        chart = col2.selectbox("Chart Type:", self.chart_builders.keys(), key="primary_chart_type")
+        theme = col3.selectbox("Theme:", ["plotly_white", "plotly_dark"], key="primary_theme")
+        scale = col4.selectbox("Y-Axis Scale:", ["Linear", "Logarithmic", "Normalized (Base 100)"], key="primary_scale")
 
         plot_df, y_title = df, "Amount (₹ Cr.)"
         if scale == "Normalized (Base 100)" and metrics:
@@ -466,7 +410,7 @@ class DashboardApp:
             y_title = "Normalized Value (Base 100)"
 
         if metrics:
-            fig = self.chart_builders[chart](df=plot_df, metrics=metrics, title=f"{chart} of Financials", theme=theme, show_grid=True, scale_type=scale, yaxis_title=y_title)
+            fig = self.chart_builders[chart](df=plot_df, metrics=metrics, title="Primary Financials Over Time", theme=theme, show_grid=True, scale_type=scale, yaxis_title=y_title)
             if fig: st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("Please select at least one metric.")
@@ -474,7 +418,6 @@ class DashboardApp:
     def _render_data_table_tab(self, df: pd.DataFrame):
         st.subheader("Merged and Cleaned Financial Data")
         st.dataframe(df.style.format("{:,.2f}", na_rep="-"), use_container_width=True)
-
 
 # --- 7. App Execution ---
 if __name__ == "__main__":
