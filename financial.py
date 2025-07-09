@@ -53,7 +53,10 @@ st.markdown("""
 # --- 4. Data Structures and Basic Classes ---
 @dataclass
 class DataQualityMetrics:
-    total_rows: int; missing_values: int; missing_percentage: float; duplicate_rows: int
+    total_rows: int
+    missing_values: int
+    missing_percentage: float
+    duplicate_rows: int
     quality_score: str = field(init=False)
     def __post_init__(self):
         if self.missing_percentage < 5: self.quality_score = "High"
@@ -212,7 +215,6 @@ class PenmanNissimAnalyzer:
 
 # --- 6. Core Application Logic ---
 def parse_single_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
-    # ... (Implementation unchanged)
     if not uploaded_file.name.split('.')[-1].lower() in ALLOWED_FILE_TYPES: return None
     try:
         df = pd.read_html(io.BytesIO(uploaded_file.getvalue()), header=[0, 1])[0]
@@ -295,7 +297,17 @@ class DashboardApp:
 
         data = st.session_state.analysis_data
         df = data["statement"]
-        dq = DataQualityMetrics(**data["data_quality"])
+        
+        dq_dict = data["data_quality"]
+        # Create a new dictionary containing only the expected init arguments
+        init_args = {
+            'total_rows': dq_dict['total_rows'],
+            'missing_values': dq_dict['missing_values'],
+            'missing_percentage': dq_dict['missing_percentage'],
+            'duplicate_rows': dq_dict['duplicate_rows']
+        }
+        # Create the object using the filtered arguments.
+        dq = DataQualityMetrics(**init_args)
         
         st.subheader(f"Company Analysis: {data['company_name']}")
         if st.session_state.show_data_quality:
@@ -335,16 +347,16 @@ class DashboardApp:
             st.markdown("##### Core Statement Items")
             c1, c2, c3, c4, c5 = st.columns(5)
             def get_idx(m): return available_metrics.index(m) + 1 if m in available_metrics else 0
-            pn_mappings['Total Assets'] = c1.selectbox("Total Assets", [''] + available_metrics, index=get_idx('Total Assets'))
-            pn_mappings['Total Liabilities'] = c2.selectbox("Total Liabilities", [''] + available_metrics, index=get_idx('Total Liabilities'))
-            pn_mappings['Total Equity'] = c3.selectbox("Total Equity", [''] + available_metrics, index=get_idx('Total Equity'))
-            pn_mappings['Revenue'] = c4.selectbox("Revenue", [''] + available_metrics, index=get_idx('Revenue'))
-            pn_mappings['Net Income'] = c5.selectbox("Net Income", [''] + available_metrics, index=get_idx('Net Income'))
+            pn_mappings['Total Assets'] = c1.selectbox("Total Assets", [''] + available_metrics, index=get_idx('Total Assets'), key='pn_ta')
+            pn_mappings['Total Liabilities'] = c2.selectbox("Total Liabilities", [''] + available_metrics, index=get_idx('Total Liabilities'), key='pn_tl')
+            pn_mappings['Total Equity'] = c3.selectbox("Total Equity", [''] + available_metrics, index=get_idx('Total Equity'), key='pn_te')
+            pn_mappings['Revenue'] = c4.selectbox("Revenue", [''] + available_metrics, index=get_idx('Revenue'), key='pn_rev')
+            pn_mappings['Net Income'] = c5.selectbox("Net Income", [''] + available_metrics, index=get_idx('Net Income'), key='pn_ni')
 
             st.markdown("##### Income and Expense Proxies")
             c1, c2 = st.columns(2)
-            pn_mappings['Operating Income'] = c1.selectbox("Operating Income (Proxy)", [''] + available_metrics, help="EBIT is a common proxy.", index=get_idx('EBIT'))
-            pn_mappings['Net Financial Expense'] = c2.selectbox("Net Financial Expense (Proxy)", [''] + available_metrics, help="Interest Expense is a common proxy.", index=get_idx('Interest Expense'))
+            pn_mappings['Operating Income'] = c1.selectbox("Operating Income (Proxy)", [''] + available_metrics, help="EBIT is a common proxy.", index=get_idx('EBIT'), key='pn_oi')
+            pn_mappings['Net Financial Expense'] = c2.selectbox("Net Financial Expense (Proxy)", [''] + available_metrics, help="Interest Expense is a common proxy.", index=get_idx('Interest Expense'), key='pn_nfe')
 
             if st.button("🚀 Run Penman-Nissim Analysis"):
                 analyzer = PenmanNissimAnalyzer(df, pn_mappings)
