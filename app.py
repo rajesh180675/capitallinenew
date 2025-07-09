@@ -8,7 +8,6 @@ import logging
 import re
 import warnings
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -194,7 +193,7 @@ class ChartGenerator:
         return fig
 
     @staticmethod
-def create_area_chart(df: pd.DataFrame, metrics: List[str], title: str, theme: str, show_grid: bool) -> go.Figure:
+    def create_area_chart(df: pd.DataFrame, metrics: List[str], title: str, theme: str, show_grid: bool) -> go.Figure:
         fig = ChartGenerator._create_base_figure(title, theme, show_grid)
         colors = px.colors.qualitative.Plotly
         for i, metric in enumerate(metrics):
