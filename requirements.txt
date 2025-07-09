@@ -10,3 +10,5 @@ lxml
 streamlit-aggrid
 plotly
 xlrd
+openpyxl 
+xlsxwriter
