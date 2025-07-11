@@ -17,3 +17,4 @@ kaleido
 scikit-learn
 fuzzywuzzy
 python-levenshtein
+sentence_transformers
