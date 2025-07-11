@@ -192,7 +192,6 @@ class PenmanNissimAnalyzer:
         self.df = df
         self.mappings = mappings
 
-    @st.cache_data
     def calculate_all(self) -> Dict[str, Any]:
         try:
             total_assets = self._get('Total Assets')
@@ -302,8 +301,6 @@ def parse_html_xls_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]
         logger.error(f"Failed to parse HTML/XLS file {uploaded_file.name}: {e}")
         return None
 
-# ... (continued from previous response; overlap for context)
-
 def parse_csv_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
     try:
         if uploaded_file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
@@ -354,6 +351,51 @@ def parse_single_file(uploaded_file: UploadedFile) -> Optional[Dict[str, Any]]:
     parsed_data["year_columns"] = valid_years
     return parsed_data
 
+# Move process_and_merge_files outside the class and make it a standalone function
+@st.cache_data(show_spinner="Processing and merging files...")
+def process_and_merge_files(_uploaded_files: List[UploadedFile]) -> Optional[Dict[str, Any]]:
+    if not _uploaded_files: return None
+    all_dfs = []
+    company_name = "Multiple Sources"
+    sources = {}
+    first_company = None
+    with st.spinner("Parsing and merging files..."):
+        for file in _uploaded_files:
+            parsed = parse_single_file(file)
+            if parsed:
+                df = parsed["statement"]
+                source = parsed["source"]
+                for metric in df.index:
+                    if metric in sources:
+                        logger.warning(f"Duplicate metric '{metric}' found in {source}. Keeping first occurrence from {sources[metric]}.")
+                    else:
+                        sources[metric] = source
+                all_dfs.append(df)
+                if not first_company and parsed["company_name"] not in ["Unknown Company", "From CSV"]:
+                    company_name = parsed["company_name"]
+                    first_company = True
+        
+    if not all_dfs:
+        st.error("None of the files could be parsed.")
+        return None
+    
+    # Enhanced merging: Align on years, fill NaNs, add source traceability
+    merged_df = pd.concat(all_dfs, axis=0, join='outer').groupby(level=0).first()  # Avoid duplicates by taking first
+    year_columns = sorted(set(col for df in all_dfs for col in df.columns if str(col).isdigit()), key=int)
+    merged_df = merged_df.reindex(columns=year_columns, fill_value=np.nan)
+    
+    data_quality = asdict(DataProcessor.calculate_data_quality(merged_df))
+    outliers = DataProcessor.detect_outliers(merged_df)
+    
+    return {
+        "statement": merged_df,
+        "company_name": company_name,
+        "data_quality": data_quality,
+        "outliers": outliers,
+        "year_columns": year_columns,
+        "sources": sources
+    }
+
 class DashboardApp:
     def __init__(self):
         self._initialize_state()
@@ -364,53 +406,10 @@ class DashboardApp:
         for k, v in defaults.items():
             if k not in st.session_state: st.session_state[k] = v
 
-    @st.cache_data(show_spinner="Processing and merging files...")
-    def process_and_merge_files(uploaded_files: List[UploadedFile]) -> Optional[Dict[str, Any]]:
-        if not uploaded_files: return None
-        all_dfs = []
-        company_name = "Multiple Sources"
-        sources = {}
-        first_company = None
-        with st.spinner("Parsing and merging files..."):
-            for file in uploaded_files:
-                parsed = parse_single_file(file)
-                if parsed:
-                    df = parsed["statement"]
-                    source = parsed["source"]
-                    for metric in df.index:
-                        if metric in sources:
-                            logger.warning(f"Duplicate metric '{metric}' found in {source}. Keeping first occurrence from {sources[metric]}.")
-                        else:
-                            sources[metric] = source
-                    all_dfs.append(df)
-                    if not first_company and parsed["company_name"] not in ["Unknown Company", "From CSV"]:
-                        company_name = parsed["company_name"]
-                        first_company = True
-        
-        if not all_dfs:
-            st.error("None of the files could be parsed.")
-            return None
-        
-        # Enhanced merging: Align on years, fill NaNs, add source traceability
-        merged_df = pd.concat(all_dfs, axis=0, join='outer').groupby(level=0).first()  # Avoid duplicates by taking first
-        year_columns = sorted(set(col for df in all_dfs for col in df.columns if str(col).isdigit()), key=int)
-        merged_df = merged_df.reindex(columns=year_columns, fill_value=np.nan)
-        
-        data_quality = asdict(DataProcessor.calculate_data_quality(merged_df))
-        outliers = DataProcessor.detect_outliers(merged_df)
-        
-        return {
-            "statement": merged_df,
-            "company_name": company_name,
-            "data_quality": data_quality,
-            "outliers": outliers,
-            "year_columns": year_columns,
-            "sources": sources
-        }
-
     def _handle_file_upload(self):
         files = st.session_state.get("file_uploader_key", [])
-        st.session_state.analysis_data = self.process_and_merge_files(files)
+        # Call the standalone function directly, not as a method - THIS IS THE FIX
+        st.session_state.analysis_data = process_and_merge_files(files)  # Removed self.
         st.session_state.metric_mapping = {}
         st.session_state.pn_results = None
         st.session_state.pn_mappings = {}
@@ -547,7 +546,7 @@ class DashboardApp:
                 'Financial Liabilities': ['debt', 'borrowings', 'loan from', 'notes payable', 'bonds', 'financial liabilities', 'long-term debt']
             }
             for key, keywords in pn_keywords.items():
-                if 'multi' in key.lower():  # For multiselect
+                if 'Assets' in key or 'Liabilities' in key and 'Financial' in key:  # For multiselect
                     suggestions = sorted(set(m for m in available_metrics if any(fuzz.partial_ratio(kw, m.lower()) > 70 for kw in keywords)))
                     st.session_state.pn_mappings[key] = suggestions[:5]  # Limit to top 5
                 else:
