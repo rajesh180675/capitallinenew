@@ -556,7 +556,7 @@ class DashboardApp:
         with st.expander("Configure Penman-Nissim Metrics", expanded=True):
             if st.button("🤖 Auto-Suggest All Mappings"):
                 auto_suggest_all()
-                st.experimental_rerun()  # Refresh to show suggestions
+                st.rerun()  # Refresh to show suggestions
             financial_asset_keywords = ['cash', 'bank', 'investments', 'marketable securities', 'loan to', 'financial assets']
             financial_liability_keywords = ['debt', 'borrowings', 'loan from', 'notes payable', 'bonds', 'financial liabilities']
             default_fin_assets = [m for m in available_metrics if any(kw in m.lower() for kw in financial_asset_keywords)]
