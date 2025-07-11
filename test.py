@@ -1659,7 +1659,7 @@ class DashboardApp:
         
         st.sidebar.divider()
         st.sidebar.title("⚙️ Display Settings")
-        st.sidebar.checkbox("Show Data Quality Indicators", key="show_data_quality", value=True)
+        st.sidebar.checkbox("Show Data Quality Indicators", key="show_data_quality", value=True)  # Already has key
         
         if st.session_state.analysis_data:
             self._render_general_metric_mapper()
@@ -1795,268 +1795,268 @@ class DashboardApp:
         """)
 
     def _render_visualization_tab(self, df: pd.DataFrame, data: Dict[str, Any]):
-    """Render visualization tab"""
-    st.header("Financial Data Visualization")
-    
-    # Controls
-    col1, col2, col3, col4 = st.columns([3, 1, 1, 2])
-    
-    with col1:
-        available_metrics = df.index.tolist()
-        default_metrics = available_metrics[:min(3, len(available_metrics))]
-        selected_metrics = st.multiselect(
-            "Select Metrics to Visualize:",
-            available_metrics,
-            default=default_metrics,
-            key="viz_metrics_select",  # Add unique key
-            help="Choose one or more metrics to plot"
-        )
-    
-    with col2:
-        chart_type = st.selectbox(
-            "Chart Type:",
-            list(self.chart_builders.keys()),
-            key="primary_chart_type"
-        )
-    
-    with col3:
-        theme = st.selectbox(
-            "Theme:",
-            ["plotly_white", "plotly_dark", "seaborn", "simple_white"],
-            key="primary_theme"
-        )
-    
-    with col4:
-        scale = st.selectbox(
-            "Y-Axis Scale:",
-            ["Linear", "Logarithmic", "Normalized (Base 100)"],
-            key="primary_scale",
-            help="Choose scale type for Y-axis"
-        )
-    
-    # Additional options with unique keys
-    show_outliers = st.checkbox("Highlight Outliers", value=True, key="viz_show_outliers")
-    show_trend = st.checkbox("Show Trend Lines", value=False, key="viz_show_trend")
-    
-    # Generate chart
-    if selected_metrics:
-        # Prepare data
-        if scale == "Normalized (Base 100)":
-            plot_df = DataProcessor.normalize_to_100(df, selected_metrics)
-            y_title = "Normalized Value (Base 100)"
-        else:
-            plot_df = df
-            y_title = "Value"
+        """Render visualization tab"""
+        st.header("Financial Data Visualization")
         
-        # Create chart
-        outliers_to_show = data["outliers"] if show_outliers else None
-        fig = self.chart_builders[chart_type](
-            plot_df, selected_metrics, 
-            "Financial Metrics Over Time", 
-            theme, True, scale, y_title, 
-            outliers_to_show
-        )
-        
-        # Add trend lines if requested
-        if show_trend and fig:
-            for metric in selected_metrics:
-                if metric in plot_df.index:
-                    values = plot_df.loc[metric].dropna()
-                    if len(values) > 1:
-                        years_numeric = np.array([int(y) for y in values.index]).reshape(-1, 1)
-                        model = LinearRegression().fit(years_numeric, values.values)
-                        trend_values = model.predict(years_numeric)
-                        
-                        fig.add_trace(go.Scatter(
-                            x=values.index, 
-                            y=trend_values,
-                            mode='lines',
-                            name=f"{metric} Trend",
-                            line=dict(dash='dash', width=2),
-                            showlegend=True
-                        ))
-        
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Show statistics with unique key
-            if st.checkbox("Show Statistics", key="viz_show_stats"):
-                stats_df = pd.DataFrame()
-                for metric in selected_metrics:
-                    if metric in df.index:
-                        series = df.loc[metric]
-                        stats_df[metric] = {
-                            'Mean': series.mean(),
-                            'Median': series.median(),
-                            'Std Dev': series.std(),
-                            'Min': series.min(),
-                            'Max': series.max(),
-                            'Growth Rate %': (series.iloc[-1] / series.iloc[0] - 1) * 100 if len(series) > 1 and series.iloc[0] != 0 else np.nan
-                        }
-                
-                st.dataframe(stats_df.T.style.format("{:,.2f}"))
-    else:
-        st.warning("Please select at least one metric to visualize.")
-
-def _render_data_table_tab(self, df: pd.DataFrame, data: Dict[str, Any]):
-    """Render data table tab"""
-    st.header("Financial Data Table")
-    
-    # Display options with unique keys
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        show_sources = st.checkbox("Show Data Sources", value=False, key="table_show_sources")
-    with col2:
-        highlight_outliers = st.checkbox("Highlight Outliers", value=True, key="table_highlight_outliers")
-    with col3:
-        decimal_places = st.number_input("Decimal Places", min_value=0, max_value=4, value=2, key="table_decimal_places")
-    
-    # Prepare dataframe for display
-    display_df = df.copy()
-    
-    # Add source column if requested
-    if show_sources and "sources" in data:
-        source_series = pd.Series(data["sources"])
-        display_df.insert(0, 'Source', source_series)
-    
-    # Apply styling
-    def highlight_outlier_cells(val, metric, year):
-        if highlight_outliers and "outliers" in data:
-            if metric in data["outliers"]:
-                year_idx = list(df.columns).index(year) if year in df.columns else -1
-                if year_idx in data["outliers"][metric]:
-                    return 'background-color: #ffcccc'
-        return ''
-    
-    # Format numbers
-    format_dict = {col: f"{{:,.{decimal_places}f}}" for col in df.columns if col != 'Source'}
-    
-    # Apply styling
-    styled_df = display_df.style.format(format_dict, na_rep="-")
-    
-    # Highlight outliers if requested
-    if highlight_outliers and "outliers" in data:
-        for metric in df.index:
-            if metric in data["outliers"]:
-                for year in df.columns:
-                    year_idx = list(df.columns).index(year)
-                    if year_idx in data["outliers"][metric]:
-                        styled_df = styled_df.applymap(
-                            lambda x: 'background-color: #ffcccc',
-                            subset=pd.IndexSlice[metric, year]
-                        )
-    
-    # Display
-    st.dataframe(styled_df, use_container_width=True)
-    
-    # Export options
-    st.divider()
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        csv = df.to_csv().encode('utf-8')
-        st.download_button(
-            "📥 Download as CSV",
-            csv,
-            "financial_data.csv",
-            "text/csv",
-            key='download-csv'
-        )
-    
-    with col2:
-        # Create Excel file in memory
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, sheet_name='Financial Data')
-        excel_data = output.getvalue()
-        
-        st.download_button(
-            "📥 Download as Excel",
-            excel_data,
-            "financial_data.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key='download-excel'
-        )
-
-def _render_financial_analysis_tab(self, df: pd.DataFrame):
-    """Render financial analysis tab"""
-    st.header("💡 Financial Ratio Analysis")
-    
-    # Check if metrics are mapped
-    mapping = {v: k for k, v in st.session_state.metric_mapping.items() if v}
-    
-    if not mapping:
-        st.warning("⚠️ Please map metrics in the sidebar to enable financial analysis.")
-        st.info("Required metrics include: Revenue, Net Profit, Total Assets, Total Equity, etc.")
-        return
-    
-    # Rename dataframe with mapped metrics
-    mapped_df = df.rename(index=mapping)
-    
-    # Calculate ratios
-    with st.spinner("Calculating financial ratios..."):
-        ratios = FinancialRatioCalculator.calculate_all_ratios(mapped_df)
-    
-    if not ratios:
-        st.error("Unable to calculate ratios. Please ensure all required metrics are mapped correctly.")
-        return
-    
-    # Combine all ratios
-    all_ratios_list = []
-    for category, ratio_df in ratios.items():
-        if not ratio_df.empty:
-            all_ratios_list.append(ratio_df)
-    
-    if all_ratios_list:
-        all_ratios_df = pd.concat(all_ratios_list)
-        
-        # Visualization section
-        st.subheader("Ratio Trends")
-        
-        col1, col2, col3 = st.columns([2, 1, 1])
+        # Controls
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 2])
         
         with col1:
-            selected_ratios = st.multiselect(
-                "Select Ratios to Visualize:",
-                all_ratios_df.index.tolist(),
-                default=all_ratios_df.index[:min(3, len(all_ratios_df))].tolist(),
-                key="analysis_ratio_select"  # Add unique key
+            available_metrics = df.index.tolist()
+            default_metrics = available_metrics[:min(3, len(available_metrics))]
+            selected_metrics = st.multiselect(
+                "Select Metrics to Visualize:",
+                available_metrics,
+                default=default_metrics,
+                key="viz_metrics_select",  # Add unique key
+                help="Choose one or more metrics to plot"
             )
         
         with col2:
             chart_type = st.selectbox(
                 "Chart Type:",
-                ["Line", "Bar"],
-                key="ratio_chart_type"
+                list(self.chart_builders.keys()),
+                key="primary_chart_type"
             )
         
         with col3:
-            show_average = st.checkbox("Show Average Line", value=True, key="analysis_show_average")  # Add unique key
+            theme = st.selectbox(
+                "Theme:",
+                ["plotly_white", "plotly_dark", "seaborn", "simple_white"],
+                key="primary_theme"
+            )
         
-        if selected_ratios:
+        with col4:
+            scale = st.selectbox(
+                "Y-Axis Scale:",
+                ["Linear", "Logarithmic", "Normalized (Base 100)"],
+                key="primary_scale",
+                help="Choose scale type for Y-axis"
+            )
+        
+        # Additional options with unique keys
+        show_outliers = st.checkbox("Highlight Outliers", value=True, key="viz_show_outliers")
+        show_trend = st.checkbox("Show Trend Lines", value=False, key="viz_show_trend")
+        
+        # Generate chart
+        if selected_metrics:
+            # Prepare data
+            if scale == "Normalized (Base 100)":
+                plot_df = DataProcessor.normalize_to_100(df, selected_metrics)
+                y_title = "Normalized Value (Base 100)"
+            else:
+                plot_df = df
+                y_title = "Value"
+            
             # Create chart
-            chart_func = ChartGenerator.create_line_chart if chart_type == "Line" else ChartGenerator.create_bar_chart
-            fig = chart_func(
-                all_ratios_df, selected_ratios,
-                "Financial Ratio Analysis",
-                "plotly_white", True, "Linear", "Ratio Value",
-                None
+            outliers_to_show = data["outliers"] if show_outliers else None
+            fig = self.chart_builders[chart_type](
+                plot_df, selected_metrics, 
+                "Financial Metrics Over Time", 
+                theme, True, scale, y_title, 
+                outliers_to_show
             )
             
-            # Add average lines if requested
-            if show_average and fig:
-                for ratio in selected_ratios:
-                    if ratio in all_ratios_df.index:
-                        avg_value = all_ratios_df.loc[ratio].mean()
-                        fig.add_hline(
-                            y=avg_value,
-                            line_dash="dash",
-                            line_color="gray",
-                            annotation_text=f"{ratio} Avg: {avg_value:.2f}"
-                        )
+            # Add trend lines if requested
+            if show_trend and fig:
+                for metric in selected_metrics:
+                    if metric in plot_df.index:
+                        values = plot_df.loc[metric].dropna()
+                        if len(values) > 1:
+                            years_numeric = np.array([int(y) for y in values.index]).reshape(-1, 1)
+                            model = LinearRegression().fit(years_numeric, values.values)
+                            trend_values = model.predict(years_numeric)
+                            
+                            fig.add_trace(go.Scatter(
+                                x=values.index, 
+                                y=trend_values,
+                                mode='lines',
+                                name=f"{metric} Trend",
+                                line=dict(dash='dash', width=2),
+                                showlegend=True
+                            ))
             
-            st.plotly_chart(fig, use_container_width=True)
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Show statistics with unique key
+                if st.checkbox("Show Statistics", key="viz_show_stats"):
+                    stats_df = pd.DataFrame()
+                    for metric in selected_metrics:
+                        if metric in df.index:
+                            series = df.loc[metric]
+                            stats_df[metric] = {
+                                'Mean': series.mean(),
+                                'Median': series.median(),
+                                'Std Dev': series.std(),
+                                'Min': series.min(),
+                                'Max': series.max(),
+                                'Growth Rate %': (series.iloc[-1] / series.iloc[0] - 1) * 100 if len(series) > 1 and series.iloc[0] != 0 else np.nan
+                            }
+                    
+                    st.dataframe(stats_df.T.style.format("{:,.2f}"))
+        else:
+            st.warning("Please select at least one metric to visualize.")
+    
+    def _render_data_table_tab(self, df: pd.DataFrame, data: Dict[str, Any]):
+        """Render data table tab"""
+        st.header("Financial Data Table")
+        
+        # Display options with unique keys
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            show_sources = st.checkbox("Show Data Sources", value=False, key="table_show_sources")
+        with col2:
+            highlight_outliers = st.checkbox("Highlight Outliers", value=True, key="table_highlight_outliers")
+        with col3:
+            decimal_places = st.number_input("Decimal Places", min_value=0, max_value=4, value=2, key="table_decimal_places")
+        
+        # Prepare dataframe for display
+        display_df = df.copy()
+        
+        # Add source column if requested
+        if show_sources and "sources" in data:
+            source_series = pd.Series(data["sources"])
+            display_df.insert(0, 'Source', source_series)
+        
+        # Apply styling
+        def highlight_outlier_cells(val, metric, year):
+            if highlight_outliers and "outliers" in data:
+                if metric in data["outliers"]:
+                    year_idx = list(df.columns).index(year) if year in df.columns else -1
+                    if year_idx in data["outliers"][metric]:
+                        return 'background-color: #ffcccc'
+            return ''
+        
+        # Format numbers
+        format_dict = {col: f"{{:,.{decimal_places}f}}" for col in df.columns if col != 'Source'}
+        
+        # Apply styling
+        styled_df = display_df.style.format(format_dict, na_rep="-")
+        
+        # Highlight outliers if requested
+        if highlight_outliers and "outliers" in data:
+            for metric in df.index:
+                if metric in data["outliers"]:
+                    for year in df.columns:
+                        year_idx = list(df.columns).index(year)
+                        if year_idx in data["outliers"][metric]:
+                            styled_df = styled_df.applymap(
+                                lambda x: 'background-color: #ffcccc',
+                                subset=pd.IndexSlice[metric, year]
+                            )
+        
+        # Display
+        st.dataframe(styled_df, use_container_width=True)
+        
+        # Export options
+        st.divider()
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            csv = df.to_csv().encode('utf-8')
+            st.download_button(
+                "📥 Download as CSV",
+                csv,
+                "financial_data.csv",
+                "text/csv",
+                key='download-csv'
+            )
+        
+        with col2:
+            # Create Excel file in memory
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, sheet_name='Financial Data')
+            excel_data = output.getvalue()
+            
+            st.download_button(
+                "📥 Download as Excel",
+                excel_data,
+                "financial_data.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key='download-excel'
+            )
+    
+    def _render_financial_analysis_tab(self, df: pd.DataFrame):
+        """Render financial analysis tab"""
+        st.header("💡 Financial Ratio Analysis")
+        
+        # Check if metrics are mapped
+        mapping = {v: k for k, v in st.session_state.metric_mapping.items() if v}
+        
+        if not mapping:
+            st.warning("⚠️ Please map metrics in the sidebar to enable financial analysis.")
+            st.info("Required metrics include: Revenue, Net Profit, Total Assets, Total Equity, etc.")
+            return
+        
+        # Rename dataframe with mapped metrics
+        mapped_df = df.rename(index=mapping)
+        
+        # Calculate ratios
+        with st.spinner("Calculating financial ratios..."):
+            ratios = FinancialRatioCalculator.calculate_all_ratios(mapped_df)
+        
+        if not ratios:
+            st.error("Unable to calculate ratios. Please ensure all required metrics are mapped correctly.")
+            return
+        
+        # Combine all ratios
+        all_ratios_list = []
+        for category, ratio_df in ratios.items():
+            if not ratio_df.empty:
+                all_ratios_list.append(ratio_df)
+        
+        if all_ratios_list:
+            all_ratios_df = pd.concat(all_ratios_list)
+            
+            # Visualization section
+            st.subheader("Ratio Trends")
+            
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                selected_ratios = st.multiselect(
+                    "Select Ratios to Visualize:",
+                    all_ratios_df.index.tolist(),
+                    default=all_ratios_df.index[:min(3, len(all_ratios_df))].tolist(),
+                    key="analysis_ratio_select"  # Add unique key
+                )
+            
+            with col2:
+                chart_type = st.selectbox(
+                    "Chart Type:",
+                    ["Line", "Bar"],
+                    key="ratio_chart_type"
+                )
+            
+            with col3:
+                show_average = st.checkbox("Show Average Line", value=True, key="analysis_show_average")  # Add unique key
+            
+            if selected_ratios:
+                # Create chart
+                chart_func = ChartGenerator.create_line_chart if chart_type == "Line" else ChartGenerator.create_bar_chart
+                fig = chart_func(
+                    all_ratios_df, selected_ratios,
+                    "Financial Ratio Analysis",
+                    "plotly_white", True, "Linear", "Ratio Value",
+                    None
+                )
+                
+                # Add average lines if requested
+                if show_average and fig:
+                    for ratio in selected_ratios:
+                        if ratio in all_ratios_df.index:
+                            avg_value = all_ratios_df.loc[ratio].mean()
+                            fig.add_hline(
+                                y=avg_value,
+                                line_dash="dash",
+                                line_color="gray",
+                                annotation_text=f"{ratio} Avg: {avg_value:.2f}"
+                            )
+                
+                st.plotly_chart(fig, use_container_width=True)
         
         # Rest of the method continues...
             
