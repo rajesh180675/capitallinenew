@@ -1705,7 +1705,7 @@ class DashboardApp:
             industries = list(IndustryBenchmarks.BENCHMARKS.keys())
             current_industry = st.session_state.get("selected_industry", industries[0])
             
-            st.session_state.selected_industry = st.selectbox(
+            st.selectbox(
                 "Select Industry for Comparison",
                 industries,
                 index=industries.index(current_industry) if current_industry in industries else 0,
