@@ -13,6 +13,7 @@ from scipy import stats
 from scipy.optimize import minimize
 import sys
 import subprocess
+import json
 
 # Install required packages before importing
 try:
@@ -3082,9 +3083,8 @@ class DashboardApp:
                     
                     # Display
                     st.json(json_results)
-                    
                     # Download button
-                    json_str = pd.io.json.dumps(json_results, indent=2)
+                    json_str = json.dumps(json_results, indent=2)
                     st.download_button(
                         "📥 Download Complete Results (JSON)",
                         json_str,
