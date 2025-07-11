@@ -15,3 +15,5 @@ xlsxwriter
 scipy
 kaleido
 scikit-learn
+fuzzywuzzy
+python-levenshtein
