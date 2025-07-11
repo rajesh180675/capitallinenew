@@ -2960,12 +2960,67 @@ class DashboardApp:
                         st.plotly_chart(fig_quality, use_container_width=True)
                         
                         # Metrics table
-                        st.dataframe(
-                            quality_metrics.style.format("{:,.2f}", na_rep="-")
-                                .background_gradient(cmap='RdYlGn_r', subset=['Beneish M-Score', 'Total Accruals (% of Assets)'])
-                                .background_gradient(cmap='RdYlGn', subset=['Cash Flow to Net Income']),
-                            use_container_width=True
-                        )
+                        # Metrics table
+                        if not quality_metrics.empty:
+                            # Define a function to color cells based on metric values
+                            def color_quality_metrics(val, metric_name):
+                                """Color cells based on metric type and value"""
+                                if pd.isna(val):
+                                    return ''
+                                
+                                # Define color thresholds for each metric
+                                if metric_name == 'Cash Flow to Net Income':
+                                    # Higher is better
+                                    if val >= 1.0:
+                                        return 'background-color: #28a745; color: white;'
+                                    elif val >= 0.8:
+                                        return 'background-color: #90EE90;'
+                                    else:
+                                        return 'background-color: #ffcccc;'
+                                
+                                elif metric_name == 'Total Accruals (% of Assets)':
+                                    # Lower absolute value is better
+                                    abs_val = abs(val)
+                                    if abs_val <= 2:
+                                        return 'background-color: #28a745; color: white;'
+                                    elif abs_val <= 5:
+                                        return 'background-color: #90EE90;'
+                                    else:
+                                        return 'background-color: #ffcccc;'
+                                
+                                elif metric_name == 'Beneish M-Score':
+                                    # Lower is better
+                                    if val < -2.22:
+                                        return 'background-color: #28a745; color: white;'
+                                    elif val < -1.78:
+                                        return 'background-color: #ffc107;'
+                                    else:
+                                        return 'background-color: #dc3545; color: white;'
+                                
+                                elif metric_name == 'Sloan Ratio %':
+                                    # Lower absolute value is better
+                                    abs_val = abs(val)
+                                    if abs_val <= 5:
+                                        return 'background-color: #28a745; color: white;'
+                                    elif abs_val <= 10:
+                                        return 'background-color: #ffc107;'
+                                    else:
+                                        return 'background-color: #ffcccc;'
+                                
+                                return ''
+                            
+                            # Apply styling
+                            styled_metrics = quality_metrics.style.format("{:,.2f}", na_rep="-")
+                            
+                            # Apply conditional formatting to each metric
+                            for metric in quality_metrics.index:
+                                for col in quality_metrics.columns:
+                                    styled_metrics = styled_metrics.applymap(
+                                        lambda x: color_quality_metrics(x, metric),
+                                        subset=pd.IndexSlice[metric, col]
+                                    )
+                            
+                            st.dataframe(styled_metrics, use_container_width=True)
                     
                     # Interpretation guide
                     with st.expander("📖 Quality Metrics Interpretation"):
